@@ -66,7 +66,7 @@ export default function GameDashboard() {
         setNewDistributionScores({}); 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRound?.id, currentRound?.participatingPlayerIds]); // Removed resetNewDistributionScores from deps
+  }, [currentRound?.id, currentRound?.participatingPlayerIds]); 
   
   const calculateOverallStates = (distributions: Distribution[], playerIds: string[], existingPlayersList: Player[]): Record<string, PlayerOverallState> => {
     const newOverallStates: Record<string, PlayerOverallState> = {};
@@ -92,7 +92,7 @@ export default function GameDashboard() {
       toast({ title: "خطأ", description: "الرجاء إدخال اسم اللاعب.", variant: "destructive" });
       return;
     }
-     if (disableAddPlayerGlobal) {
+     if (disableAddPlayerGlobal) { // This check is mostly for UI disabling, but good to have here too
       toast({ title: "لا يمكن إضافة لاعب", description: "لا يمكن إضافة لاعب جديد حالياً بسبب وجود لاعب محروق في العشرة الحالية. أكمل العشرة أو ابدأ عشرة جديدة.", variant: "destructive" });
       return;
     }
@@ -102,27 +102,44 @@ export default function GameDashboard() {
     const updatedAllPlayers = [...allPlayers, newPlayer];
     setAllPlayers(updatedAllPlayers);
     setNewPlayerName('');
-    toast({ title: "تمت الإضافة", description: `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.` });
+    
 
     if (currentRound && !currentRound.isConcluded) {
-        const existingPlayerScores = currentRound.participatingPlayerIds
-            .map(pid => currentRound.playerOverallStates[pid]?.totalScore || 0);
-        const highestScore = Math.max(0, ...existingPlayerScores);
-
         const updatedParticipatingPlayerIds = [...currentRound.participatingPlayerIds, newPlayerId];
+        let updatedDistributions = [...currentRound.distributions];
+        let joinMessage = `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.`;
+
+        // Check if there are any *actual gameplay* distributions (not join/edit)
+        const hasGameplayDistributions = currentRound.distributions.some(
+            dist => !dist.name.startsWith("انضمام:") && !dist.name.startsWith("تعديل لـ")
+        );
+
+        if (hasGameplayDistributions) {
+            // Gameplay has started, new player catches up to highest score
+            const existingPlayerScores = currentRound.participatingPlayerIds
+                .map(pid => currentRound.playerOverallStates[pid]?.totalScore || 0);
+            const highestScore = Math.max(0, ...existingPlayerScores);
+
+            const scoresForCatchUpDistribution: Record<string, number> = {};
+            updatedParticipatingPlayerIds.forEach(pid => {
+                scoresForCatchUpDistribution[pid] = (pid === newPlayerId) ? highestScore : 0;
+            });
+
+            const catchUpDistribution: Distribution = {
+              id: crypto.randomUUID(),
+              name: `انضمام: ${newPlayer.name}`,
+              scores: scoresForCatchUpDistribution,
+            };
+            updatedDistributions.push(catchUpDistribution);
+            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
+        } else {
+            // No actual gameplay distributions yet, new player starts at 0.
+            // No special distribution needed; calculateOverallStates will assign 0.
+            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط 0.`;
+        }
         
-        const scoresForCatchUpDistribution: Record<string, number> = {};
-        updatedParticipatingPlayerIds.forEach(pid => {
-            scoresForCatchUpDistribution[pid] = (pid === newPlayerId) ? highestScore : 0;
-        });
+        toast({ title: "انضم لاعب!", description: joinMessage });
 
-        const catchUpDistribution: Distribution = {
-          id: crypto.randomUUID(),
-          name: `انضمام: ${newPlayer.name}`,
-          scores: scoresForCatchUpDistribution,
-        };
-
-        const updatedDistributions = [...currentRound.distributions, catchUpDistribution];
         const updatedOverallStates = calculateOverallStates(updatedDistributions, updatedParticipatingPlayerIds, updatedAllPlayers);
 
         let heroId: string | undefined = currentRound.heroId; 
@@ -147,8 +164,8 @@ export default function GameDashboard() {
         }));
         
         resetNewDistributionScores(updatedParticipatingPlayerIds);
-
-        toast({ title: "انضم لاعب!", description: `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.` });
+      } else {
+         toast({ title: "تمت الإضافة", description: `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.` });
       }
   };
   
@@ -175,7 +192,7 @@ export default function GameDashboard() {
             heroId: finalHeroId, 
          };
         setArchivedRounds(prev => [...prev, roundToArchive]);
-        return roundToArchive; // Return archived round for potential use
+        return roundToArchive; 
     }
     return null;
   }, [currentRound, allPlayers]);
@@ -289,7 +306,7 @@ export default function GameDashboard() {
         break;
       }
       parsedScores[playerId] = score;
-      if (score !== 0 || scoreStr === "-0") changesMade = true; // Consider -0 as a change
+      if (score !== 0 || scoreStr === "-0") changesMade = true; 
     }
 
     if (!validInput) return;
@@ -322,11 +339,9 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        // We need to access the *next* state, which setCurrentRound will establish.
-        // For immediate feedback in toasts, we can recalculate based on the *intended* new distributions.
         const distributionsAfterAdjustment = [
-          ...currentRound.distributions, // old distributions
-          { id: 'temp-adjust', name: 'temp', scores: scoresForAdjustment} // the adjustment itself
+          ...currentRound.distributions, 
+          { id: 'temp-adjust', name: 'temp', scores: scoresForAdjustment} 
         ];
         const statesAfterAdjustment = calculateOverallStates(distributionsAfterAdjustment, currentRound.participatingPlayerIds, allPlayers);
         const playerStateAfterAdjustment = statesAfterAdjustment[playerId];
@@ -417,7 +432,7 @@ export default function GameDashboard() {
         return { ...prevScores, [playerId]: (-scoreNum).toString() };
       } else if (scoreNum === 0 && currentScoreStr !== "-0" ) { 
         return { ...prevScores, [playerId]: "-0"};
-      } else if (currentScoreStr === "-0" && scoreNum === 0) { // Toggle back from -0 to 0
+      } else if (currentScoreStr === "-0" && scoreNum === 0) { 
         return { ...prevScores, [playerId]: "0"};
       }
       return prevScores; 
