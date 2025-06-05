@@ -35,6 +35,7 @@ export default function GameDashboard() {
   const [newDistributionScores, setNewDistributionScores] = useState<Record<string, string>>({});
   const [roundCounter, setRoundCounter] = useState(1);
   const [isSelectPlayersDialogOpen, setIsSelectPlayersDialogOpen] = useState(false);
+  const [heroForNextRound, setHeroForNextRound] = useState<string | undefined>(undefined);
 
 
   const { toast } = useToast();
@@ -125,12 +126,22 @@ export default function GameDashboard() {
 
             const catchUpDistribution: Distribution = {
               id: crypto.randomUUID(),
-              name: `join:${newPlayerId}:${newPlayer.name}`, // Store ID and name
+              name: `join:${newPlayerId}:${newPlayer.name}`, 
               scores: scoresForCatchUpDistribution,
             };
             updatedDistributions.push(catchUpDistribution);
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
         } else {
+             const scoresForJoinDistribution: Record<string, number> = {};
+             updatedParticipatingPlayerIds.forEach(pid => {
+                scoresForJoinDistribution[pid] = (pid === newPlayerId) ? 0 : 0; // All players get 0 for this join event
+             });
+             const joinDistribution: Distribution = {
+              id: crypto.randomUUID(),
+              name: `join:${newPlayerId}:${newPlayer.name}`,
+              scores: scoresForJoinDistribution,
+            };
+            updatedDistributions.push(joinDistribution);
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط 0.`;
         }
         
@@ -169,43 +180,70 @@ export default function GameDashboard() {
     if (currentRound) {
         const finalPlayerOverallStates = calculateOverallStates(currentRound.distributions, currentRound.participatingPlayerIds, allPlayers);
         
-        let finalHeroId = currentRound.heroId;
-        if (!finalHeroId) {
+        let determinedHeroId = currentRound.heroId;
+        let determinedIsConcluded = currentRound.isConcluded;
+
+        if (!determinedIsConcluded) { 
             const activePlayers = currentRound.participatingPlayerIds.filter(pid => finalPlayerOverallStates[pid] && !finalPlayerOverallStates[pid].isBurned);
             if (activePlayers.length === 1 && currentRound.participatingPlayerIds.length > 1) {
-                finalHeroId = activePlayers[0];
-                if (finalPlayerOverallStates[finalHeroId]) {
-                    finalPlayerOverallStates[finalHeroId].isHero = true; 
+                determinedHeroId = activePlayers[0];
+                if (finalPlayerOverallStates[determinedHeroId!]) { 
+                    finalPlayerOverallStates[determinedHeroId!].isHero = true;
                 }
+                determinedIsConcluded = true;
+            } else if (activePlayers.length === 0 && currentRound.participatingPlayerIds.length > 0) {
+                determinedIsConcluded = true; 
             }
+        }
+        
+        if (determinedHeroId && finalPlayerOverallStates[determinedHeroId] && !finalPlayerOverallStates[determinedHeroId].isHero) {
+            finalPlayerOverallStates[determinedHeroId].isHero = true;
         }
 
         const roundToArchive: ArchivedGameRound = {
             ...currentRound,
-            endTime: new Date(),
+            distributions: [...currentRound.distributions], 
+            playerOverallStates: finalPlayerOverallStates, 
+            heroId: determinedHeroId,
             isConcluded: true, 
-            playerOverallStates: finalPlayerOverallStates,
-            heroId: finalHeroId, 
+            endTime: new Date(),
          };
-        setArchivedRounds(prev => [...prev, roundToArchive]);
+        
+        setArchivedRounds(prev => {
+            if (prev.find(r => r.id === roundToArchive.id)) {
+                return prev.map(r => r.id === roundToArchive.id ? roundToArchive : r); // Update if exists
+            }
+            return [...prev, roundToArchive];
+        });
         return roundToArchive; 
     }
     return null;
   }, [currentRound, allPlayers]);
 
   const handleOpenPlayerSelection = () => {
-     if (currentRound && !currentRound.isConcluded) {
-      const confirmStartNew = window.confirm("العشرة الحالية لم تنته بعد. هل أنت متأكد أنك تريد بدء عشرة جديدة وأرشفة الحالية؟");
-      if (!confirmStartNew) return;
-      archiveCurrentRound();
-    } else if (currentRound && currentRound.isConcluded) {
-       archiveCurrentRound();
+    let heroIdToPass: string | undefined = undefined;
+
+    if (currentRound) {
+        if (!currentRound.isConcluded) { 
+            const confirmStartNew = window.confirm("العشرة الحالية لم تنته بعد. هل أنت متأكد أنك تريد بدء عشرة جديدة وأرشفة الحالية؟");
+            if (!confirmStartNew) return;
+            const archived = archiveCurrentRound();
+            heroIdToPass = archived?.heroId;
+        } else { 
+            heroIdToPass = currentRound.heroId;
+            const isAlreadyArchived = archivedRounds.some(r => r.id === currentRound!.id);
+            if (!isAlreadyArchived) {
+                const archived = archiveCurrentRound(); 
+                heroIdToPass = archived?.heroId; 
+            }
+        }
     }
 
     if (allPlayers.length === 0) {
       toast({ title: "لا يوجد لاعبين", description: "الرجاء إضافة لاعبين أولاً لبدء عشرة جديدة.", variant: "destructive" });
       return;
     }
+    setHeroForNextRound(heroIdToPass); 
     setIsSelectPlayersDialogOpen(true);
   };
 
@@ -232,6 +270,7 @@ export default function GameDashboard() {
     toast({ title: `بدء عشرة جديدة (رقم ${roundCounter})`, description: `تم اختيار ${selectedPlayerIds.length} لاعبين.` });
     setRoundCounter(prev => prev + 1);
     setIsSelectPlayersDialogOpen(false);
+    setHeroForNextRound(undefined); // Clear hero for next round state
   };
 
 
@@ -335,10 +374,10 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        const distributionsAfterAdjustment = [
-          ...currentRound.distributions, 
-          { id: 'temp-adjust', name: 'temp', scores: scoresForAdjustment} 
-        ];
+        // Recalculate states to check for burning AFTER the currentRound state has been updated
+        // This is implicitly handled by setCurrentRound in internalAddDistribution
+        // For immediate feedback, we can simulate:
+        const distributionsAfterAdjustment = currentRound.distributions; // Already updated by internalAddDistribution
         const statesAfterAdjustment = calculateOverallStates(distributionsAfterAdjustment, currentRound.participatingPlayerIds, allPlayers);
         const playerStateAfterAdjustment = statesAfterAdjustment[playerId];
 
@@ -435,8 +474,6 @@ export default function GameDashboard() {
     });
   };
 
-  const participatingPlayerIdsForDialog = useMemo(() => currentRound?.participatingPlayerIds || [], [currentRound]);
-
 
   const handlePrint = () => {
     window.print();
@@ -500,7 +537,7 @@ export default function GameDashboard() {
         onOpenChange={setIsSelectPlayersDialogOpen}
         onConfirm={handleConfirmPlayerSelection}
         allPlayers={allPlayers}
-        previousRoundPlayerIds={participatingPlayerIdsForDialog}
+        heroIdFromLastRound={heroForNextRound}
       />
 
 
@@ -561,10 +598,9 @@ export default function GameDashboard() {
                     let joiningPlayerIdInThisDist: string | undefined = undefined;
 
                     if (dist.name.startsWith("join:")) {
-                        const parts = dist.name.split(':'); // "join", playerId, playerName...
+                        const parts = dist.name.split(':'); 
                         if (parts.length >= 3) {
                             joiningPlayerIdInThisDist = parts[1];
-                            // Reconstruct player name if it contained colons, though unlikely for user input names
                             const joiningPlayerName = parts.slice(2).join(':'); 
                             distNameToDisplay = `انضمام: ${joiningPlayerName}`;
                             isJoinDistForSpecificPlayer = true;
@@ -642,12 +678,12 @@ export default function GameDashboard() {
                              playerState?.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل العشرة!</span> : 
                              "في اللعب"}
                             
-                            {!currentRound.isConcluded && (
+                            {!currentRound.isConcluded && playerState && (
                                <EditScoreDialog 
                                    playerState={{ 
                                        playerId: playerId, 
                                        name: getPlayerName(playerId), 
-                                       totalScore: playerState?.totalScore || 0,
+                                       totalScore: playerState.totalScore,
                                    }} 
                                    onEditScore={handleEditScore} 
                                />

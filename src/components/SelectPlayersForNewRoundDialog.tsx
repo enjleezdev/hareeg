@@ -21,7 +21,7 @@ interface SelectPlayersForNewRoundDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: (selectedPlayerIds: string[]) => void;
   allPlayers: Player[];
-  previousRoundPlayerIds?: string[]; // IDs of players from the round being archived
+  heroIdFromLastRound?: string; 
 }
 
 export function SelectPlayersForNewRoundDialog({
@@ -29,45 +29,45 @@ export function SelectPlayersForNewRoundDialog({
   onOpenChange,
   onConfirm,
   allPlayers,
-  previousRoundPlayerIds = [],
+  heroIdFromLastRound,
 }: SelectPlayersForNewRoundDialogProps) {
   const [potentialPlayers, setPotentialPlayers] = useState<Player[]>([]);
-  const [draftPlayers, setDraftPlayers] = useState<Player[]>([]); // Players selected for the new round, ordered
+  const [draftPlayers, setDraftPlayers] = useState<Player[]>([]); 
   const { toast } = useToast();
 
-  const initializePlayerLists = useCallback(() => {
+  useEffect(() => {
     if (isOpen) {
       let initialDraftPlayers: Player[] = [];
-      if (previousRoundPlayerIds.length > 0) {
-        // Populate draft players with players from the previous round, maintaining their order
-        // and ensuring they still exist in allPlayers
-        initialDraftPlayers = previousRoundPlayerIds
-          .map(id => allPlayers.find(p => p.id === id))
-          .filter((p): p is Player => Boolean(p));
-      } else if (allPlayers.length <= 4 && allPlayers.length > 0) { 
-        // If no previous round or few players, pre-select all players
-        initialDraftPlayers = [...allPlayers];
+      let availableForSelectionSource: Player[] = [...allPlayers];
+
+      if (heroIdFromLastRound) {
+        const heroPlayer = allPlayers.find(p => p.id === heroIdFromLastRound);
+        if (heroPlayer) {
+          initialDraftPlayers = [heroPlayer]; 
+          availableForSelectionSource = allPlayers.filter(p => p.id !== heroIdFromLastRound);
+        }
+      } else if (allPlayers.length > 0 && allPlayers.length <= 4) {
+          // No hero, and few players overall, pre-select all (first round/no hero scenario)
+          initialDraftPlayers = [...allPlayers];
+          availableForSelectionSource = [];
       }
-
-
-      const draftPlayerIds = new Set(initialDraftPlayers.map(p => p.id));
-      const availableForSelection = allPlayers.filter(p => !draftPlayerIds.has(p.id));
       
       setDraftPlayers(initialDraftPlayers);
-      setPotentialPlayers(availableForSelection);
+      const sortedAvailablePlayers = availableForSelectionSource.sort((a,b) => 
+        allPlayers.findIndex(p => p.id === a.id) - allPlayers.findIndex(p => p.id === b.id)
+      );
+      setPotentialPlayers(sortedAvailablePlayers);
+
     } else {
-      // Reset when closed
-      if (potentialPlayers.length > 0 || draftPlayers.length > 0) {
+      // Reset when dialog is closed and lists are not already empty
+      if (draftPlayers.length > 0 || potentialPlayers.length > 0) {
         setPotentialPlayers([]);
         setDraftPlayers([]);
       }
     }
-  }, [isOpen, allPlayers, previousRoundPlayerIds, potentialPlayers.length, draftPlayers.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, allPlayers, heroIdFromLastRound]);
 
-
-  useEffect(() => {
-    initializePlayerLists();
-  }, [isOpen, allPlayers, previousRoundPlayerIds, initializePlayerLists]);
 
   const addPlayerToDraft = (player: Player) => {
     setDraftPlayers(prev => [...prev, player]);
@@ -75,7 +75,7 @@ export function SelectPlayersForNewRoundDialog({
   };
 
   const removePlayerFromDraft = (player: Player) => {
-    setPotentialPlayers(prev => [...prev, player].sort((a,b) => allPlayers.findIndex(p => p.id === a.id) - allPlayers.findIndex(p => p.id === b.id))); // Maintain original sort
+    setPotentialPlayers(prev => [...prev, player].sort((a,b) => allPlayers.findIndex(p => p.id === a.id) - allPlayers.findIndex(p => p.id === b.id))); 
     setDraftPlayers(prev => prev.filter(p => p.id !== player.id));
   };
 
@@ -113,7 +113,10 @@ export function SelectPlayersForNewRoundDialog({
             اختيار وترتيب اللاعبين للعشرة الجديدة
           </DialogTitle>
           <DialogDescription>
-            اختر اللاعبين المشاركين في العشرة الجديدة وقم بترتيبهم حسب تسلسل اللعب المطلوب.
+            {heroIdFromLastRound && allPlayers.find(p => p.id === heroIdFromLastRound) 
+              ? `بطل العشرة السابقة (${allPlayers.find(p => p.id === heroIdFromLastRound)?.name}) تم اختياره تلقائيًا. أضف لاعبين آخرين ورتبهم.`
+              : "اختر اللاعبين المشاركين في العشرة الجديدة وقم بترتيبهم حسب تسلسل اللعب المطلوب."
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -172,10 +175,11 @@ export function SelectPlayersForNewRoundDialog({
         </div>
 
         <DialogFooter className="mt-auto pt-4 border-t">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+          <Button variant="outline" onClick={() => { onOpenChange(false); }}>إلغاء</Button>
           <Button onClick={handleConfirmSelection}>بدء العشرة باللاعبين المختارين</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
