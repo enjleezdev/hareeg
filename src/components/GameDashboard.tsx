@@ -10,7 +10,7 @@ import { ArchivedRoundsDialog } from './ArchivedRoundsDialog';
 import { SelectPlayersForNewRoundDialog } from './SelectPlayersForNewRoundDialog';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
-import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Minus } from 'lucide-react';
+import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Minus, Printer } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FlameIcon } from '@/components/icons/FlameIcon';
 import { TrophyIcon } from '@/components/icons/TrophyIcon';
@@ -333,14 +333,18 @@ export default function GameDashboard() {
 
   const participatingPlayerIdsForDialog = useMemo(() => currentRound?.participatingPlayerIds || [], [currentRound]);
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <header className="text-center py-6">
+      <header className="text-center py-6 no-print">
         <h1 className="text-4xl font-bold font-headline text-primary">دفتر الحريق – كوشتينة 🔥</h1>
         <p className="text-muted-foreground">ما تبقى كيشة وما تلعب طوف</p>
       </header>
 
-      <Card className="shadow-lg">
+      <Card className="shadow-lg no-print">
         <CardHeader>
           <CardTitle className="font-headline text-accent">إدارة اللاعبين</CardTitle>
         </CardHeader>
@@ -369,7 +373,7 @@ export default function GameDashboard() {
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap gap-4 justify-center">
+      <div className="flex flex-wrap gap-4 justify-center no-print">
         <Button onClick={handleOpenPlayerSelectDialog} size="lg" className="min-w-[180px]">
            <PlusCircle className="ms-2 h-5 w-5"/> عشرة جديدة
         </Button>
@@ -377,9 +381,14 @@ export default function GameDashboard() {
         <Button onClick={handleUndoStartNewRound} disabled={!canUndoStartNewRound} variant="outline" className="min-w-[180px]">
           <RotateCcw className="ms-2 h-4 w-4"/>  استرجاع العشرة السابقة
         </Button>
+         {currentRound && currentRound.isConcluded && (
+          <Button onClick={handlePrint} variant="outline" size="lg" className="min-w-[180px] no-print">
+            <Printer className="ms-2 h-5 w-5" /> طباعة العشرة
+          </Button>
+        )}
       </div>
       
-      <Separator />
+      <Separator className="no-print" />
 
        <SelectPlayersForNewRoundDialog
         isOpen={isSelectPlayersDialogOpen}
@@ -390,14 +399,14 @@ export default function GameDashboard() {
       />
 
       {currentRound && currentRound.participatingPlayerIds.length > 0 ? (
-        <div className="space-y-6">
+        <div id="printable-round-content" className="space-y-6">
           <h2 className="text-2xl font-semibold text-center font-headline">
             العشرة الحالية (رقم {currentRound.roundNumber})
             {currentRound.heroId && <TrophyIcon className="inline-block w-6 h-6 ms-2 text-yellow-500" data-ai-hint="trophy award" />}
           </h2>
 
           {currentRound.isConcluded && currentRound.heroId && (
-            <Alert variant="default" className="bg-green-100 border-green-400 text-green-700">
+            <Alert variant="default" className="bg-green-100 border-green-400 text-green-700 no-print">
               <CheckCircle className="h-5 w-5 text-green-600" />
               <AlertTitle className="font-bold">انتهت العشرة!</AlertTitle>
               <AlertDescription>
@@ -406,7 +415,7 @@ export default function GameDashboard() {
             </Alert>
           )}
           {currentRound.isConcluded && !currentRound.heroId && currentRound.participatingPlayerIds.length > 0 && currentRound.participatingPlayerIds.every(pid => currentRound.playerOverallStates[pid]?.isBurned) && (
-             <Alert variant="destructive">
+             <Alert variant="destructive" className="no-print">
               <FlameIcon className="h-5 w-5" data-ai-hint="fire flame"/>
               <AlertTitle className="font-bold">كل اللاعبين احترقوا!</AlertTitle>
               <AlertDescription>
@@ -452,7 +461,7 @@ export default function GameDashboard() {
                   ))}
 
                   {!currentRound.isConcluded && (
-                    <TableRow>
+                    <TableRow className="no-print">
                       <TableCell className="font-semibold sticky left-0 bg-card z-10 whitespace-nowrap">نقاط التوزيعة الجديدة</TableCell>
                       {currentRound.participatingPlayerIds.map(playerId => (
                         <TableCell key={playerId}>
@@ -488,7 +497,7 @@ export default function GameDashboard() {
                   <TableRow className="bg-secondary/50">
                     <TableCell className="font-semibold sticky left-0 bg-secondary/50 z-10 whitespace-nowrap">
                          الحالة
-                         {!currentRound.isConcluded && <span className="ms-1 text-xs font-normal">(تعديل)</span>}
+                         {!currentRound.isConcluded && <span className="ms-1 text-xs font-normal no-print">(تعديل)</span>}
                     </TableCell>
                     {currentRound.participatingPlayerIds.map(playerId => {
                       const playerState = currentRound.playerOverallStates[playerId];
@@ -521,11 +530,11 @@ export default function GameDashboard() {
           </Card>
 
           {!currentRound.isConcluded && currentRound.participatingPlayerIds.length > 0 && currentRound.participatingPlayerIds.filter(pid => currentRound.playerOverallStates[pid] && !currentRound.playerOverallStates[pid]?.isBurned).length > 0 && (
-            <Button onClick={handleAddDistribution} className="w-full mt-4">إضافة النقاط للتوزيعة</Button>
+            <Button onClick={handleAddDistribution} className="w-full mt-4 no-print">إضافة النقاط للتوزيعة</Button>
           )}
 
            {currentRound.participatingPlayerIds.length > 0 && currentRound.participatingPlayerIds.filter(pid => currentRound.playerOverallStates[pid] && !currentRound.playerOverallStates[pid]?.isBurned).length === 0 && !currentRound.isConcluded && (
-             <Alert variant="destructive" className="mt-4">
+             <Alert variant="destructive" className="mt-4 no-print">
                 <FlameIcon className="h-4 w-4" data-ai-hint="fire flame" />
                 <AlertTitle>جميع اللاعبين النشطين احترقوا!</AlertTitle>
                 <AlertDescription>الرجاء الضغط على "عشرة جديدة" لبدء جولة أخرى.</AlertDescription>
@@ -534,7 +543,7 @@ export default function GameDashboard() {
 
         </div>
       ) : (
-        <div className="text-center py-10">
+        <div className="text-center py-10 no-print">
           <p className="text-xl text-muted-foreground">
             {allPlayers.length === 0 ? "أضف لاعبين إلى القائمة الكلية لبدء اللعبة!" : "اضغط على 'عشرة جديدة' لاختيار اللاعبين وبدء اللعب!"}
           </p>

@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -109,5 +110,114 @@
       filter: drop-shadow(0 0 10px hsl(var(--primary) / 0.5));
       opacity: 1;
     }
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    margin: 0;
+    padding: 0.5in; /* Adjust print margins */
+    font-size: 10pt;
+    background-color: white !important; /* Ensure white background for print */
+    color: black !important; /* Ensure black text for print */
+    -webkit-print-color-adjust: exact !important; /* For Chrome/Safari to respect background colors */
+    print-color-adjust: exact !important; /* Standard */
+  }
+  
+  /* Ensure the printable area takes up the necessary space */
+  #printable-round-content {
+    width: 100%;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 auto;
+    padding: 0;
+  }
+
+  #printable-round-content h2 {
+    text-align: center;
+    font-size: 1.5rem; /* 24pt */
+    margin-bottom: 0.5rem;
+    color: black !important;
+  }
+
+  #printable-round-content .overflow-x-auto {
+    overflow-x: visible !important;
+  }
+
+  #printable-round-content table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  #printable-round-content th,
+  #printable-round-content td {
+    border: 1px solid #ccc !important;
+    padding: 6px 8px !important; /* Slightly more padding for print */
+    text-align: right !important;
+    color: black !important;
+    background-color: white !important; /* Default cell background */
+  }
+  
+  #printable-round-content th {
+    background-color: #e2e8f0 !important; /* Light gray for table headers (Tailwind gray-200) */
+  }
+  
+  /* Specific row/cell backgrounds for print */
+   #printable-round-content tr.bg-secondary\/50,
+   #printable-round-content td.bg-secondary\/50,
+   #printable-round-content th.bg-card,
+   #printable-round-content td.bg-card {
+    background-color: #f1f5f9 !important; /* Tailwind gray-100 for M مجموع and الحالة rows */
+  }
+  
+  #printable-round-content td.bg-red-100\/70 {
+     background-color: #fee2e2 !important; /* Tailwind red-100 for negative scores */
+  }
+
+
+  #printable-round-content .sticky {
+    position: static !important;
+    /* background-color: transparent !important; No, keep their print background */
+    z-index: auto !important;
+  }
+
+  #printable-round-content .flame-animation {
+    animation: none !important;
+    color: #ef4444 !important; /* Tailwind red-500 for burned text */
+  }
+   #printable-round-content .text-destructive {
+     color: #ef4444 !important;
+   }
+
+  #printable-round-content .text-yellow-500,
+  #printable-round-content .text-yellow-600 {
+    color: #ca8a04 !important; /* Tailwind yellow-600 for trophy/hero text */
+  }
+  
+  #printable-round-content svg { /* Make icons black for better print visibility */
+    color: black !important;
+    fill: black !important; 
+  }
+  #printable-round-content .text-yellow-500 svg, /* Ensure hero trophy keeps its color if needed but usually icons black */
+  #printable-round-content .text-yellow-600 svg {
+      color: #ca8a04 !important;
+      fill: #ca8a04 !important;
+  }
+   #printable-round-content .text-destructive svg {
+      color: #ef4444 !important;
+      fill: #ef4444 !important;
+   }
+
+
+  /* Hide interactive elements that might still be in the DOM within the printable area */
+  #printable-round-content input[type="number"],
+  #printable-round-content button[aria-label*="تعديل نقاط"],
+  #printable-round-content button[aria-label*="تحويل نقاط"],
+  #printable-round-content .edit-score-dialog-trigger { /* More specific selector for edit button */
+    display: none !important;
   }
 }
