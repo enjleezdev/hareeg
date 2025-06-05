@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -5,15 +6,23 @@ import type { Player, PlayerRoundState, GameRound, ArchivedGameRound } from '@/l
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PlayerCard } from './PlayerCard';
 import { ArchivedRoundsDialog } from './ArchivedRoundsDialog';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
-import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle } from 'lucide-react';
+import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Pencil } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FlameIcon } from '@/components/icons/FlameIcon';
 import { TrophyIcon } from '@/components/icons/TrophyIcon';
-
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { EditScoreDialog } from './EditScoreDialog';
+import { cn } from '@/lib/utils';
 
 const BURN_LIMIT = 31;
 
@@ -80,7 +89,6 @@ export default function GameDashboard() {
     if (currentRound && !currentRound.isConcluded) {
       const confirmStartNew = window.confirm("العشرة الحالية لم تنته بعد. هل أنت متأكد أنك تريد بدء عشرة جديدة وأرشفة الحالية؟");
       if (!confirmStartNew) return;
-       // Archive current round as is
       setArchivedRounds(prev => [...prev, { ...currentRound, endTime: new Date(), isConcluded: true }]);
     } else if (currentRound && currentRound.isConcluded) {
        setArchivedRounds(prev => [...prev, { ...currentRound, endTime: new Date() }]);
@@ -118,15 +126,13 @@ export default function GameDashboard() {
 
     let changesMade = false;
     const updatedPlayerStates = currentRound.playerStates.map(ps => {
-      if (ps.isBurned) return ps; // Skip burned players
+      if (ps.isBurned) return ps; 
 
       const scoreStr = distributionValues[ps.playerId] || "0";
       const score = parseInt(scoreStr, 10);
 
       if (isNaN(score)) {
          toast({ title: "خطأ في الإدخال", description: `القيمة المدخلة للاعب ${ps.name} غير صحيحة.`, variant: "destructive" });
-        // To prevent partial updates, we might want to return early or mark an error state.
-        // For now, we'll just skip this player's score update if invalid.
         return ps; 
       }
       
@@ -145,13 +151,11 @@ export default function GameDashboard() {
         return;
     }
 
-
-    // Check for hero
     const activePlayers = updatedPlayerStates.filter(p => !p.isBurned);
     let heroId: string | undefined = undefined;
     if (activePlayers.length === 1 && updatedPlayerStates.length > 1) {
       heroId = activePlayers[0].playerId;
-      updatedPlayerStates.forEach(ps => ps.isHero = ps.playerId === heroId); // Set hero flag
+      updatedPlayerStates.forEach(ps => ps.isHero = ps.playerId === heroId); 
       toast({ title: "بطل العشرة!", description: `اللاعب ${activePlayers[0].name} هو بطل العشرة!`, className:"bg-yellow-400 text-black" });
     }
     
@@ -169,7 +173,7 @@ export default function GameDashboard() {
 
     const updatedPlayerStates = currentRound.playerStates.map(ps => {
       if (ps.playerId === playerId) {
-        const newScores = [...ps.scores, adjustment]; // Add adjustment as a new score entry
+        const newScores = [...ps.scores, adjustment]; 
         const newTotalScore = newScores.reduce((sum, s) => sum + s, 0);
         const isBurned = newTotalScore >= BURN_LIMIT;
          if(isBurned && !ps.isBurned) {
@@ -182,18 +186,17 @@ export default function GameDashboard() {
       return ps;
     });
     
-    // Re-check for hero after score edit
     const activePlayers = updatedPlayerStates.filter(p => !p.isBurned);
     let heroId: string | undefined = undefined;
     if (activePlayers.length === 1 && updatedPlayerStates.length > 1) {
       heroId = activePlayers[0].playerId;
       updatedPlayerStates.forEach(ps => ps.isHero = ps.playerId === heroId);
-      if (currentRound.heroId !== heroId) { // New hero or hero changed
+      if (currentRound.heroId !== heroId) { 
         toast({ title: "بطل العشرة!", description: `اللاعب ${activePlayers[0].name} هو بطل العشرة بعد التعديل!`, className: "bg-yellow-400 text-black" });
       }
-    } else { // No hero or more than one active player
-        updatedPlayerStates.forEach(ps => ps.isHero = false); // Clear any previous hero flag if conditions changed
-        if (currentRound.heroId && !heroId) { // Hero was lost
+    } else { 
+        updatedPlayerStates.forEach(ps => ps.isHero = false); 
+        if (currentRound.heroId && !heroId) { 
              toast({ title: "تغيير في البطولة", description: "لم يعد هناك بطل وحيد للعشرة بعد التعديل."});
         }
     }
@@ -209,33 +212,28 @@ export default function GameDashboard() {
       toast({ title: "خطأ", description: "لا توجد عشرات مؤرشفة لاسترجاعها.", variant: "destructive"});
       return;
     }
-    // Check if any score was entered in current round for any player state
-    if (currentRound && currentRound.playerStates.some(ps => ps.scores.length > 0 && ps.scores.some(s => s !== 0 || s === 0 /* explicitly allow 0 as a score */) )) {
+    if (currentRound && currentRound.playerStates.some(ps => ps.scores.length > 0 && ps.scores.some(s => s !== 0 || s === 0 ))) {
       toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية.", variant: "destructive"});
       return;
     }
 
-
     const lastArchivedRound = archivedRounds[archivedRounds.length - 1];
-    // Ensure players in the last archived round still exist in allPlayers, or filter/map accordingly.
-    // For simplicity, we assume player list consistency or that this is handled by how rounds are structured.
-    // Critical: Ensure names are up-to-date if they can be edited globally (not implemented here).
     const restoredPlayerStates = lastArchivedRound.playerStates.map(archivedPs => {
         const currentPlayerInfo = allPlayers.find(p => p.id === archivedPs.playerId);
         return {
             ...archivedPs,
-            name: currentPlayerInfo ? currentPlayerInfo.name : archivedPs.name, // Update name if changed
+            name: currentPlayerInfo ? currentPlayerInfo.name : archivedPs.name, 
         };
     });
 
-
     setCurrentRound({...lastArchivedRound, playerStates: restoredPlayerStates});
     setArchivedRounds(prev => prev.slice(0, -1));
-    setRoundCounter(lastArchivedRound.roundNumber); // Reset round counter to the restored round's number
+    setRoundCounter(lastArchivedRound.roundNumber); 
     toast({ title: "تم الاسترجاع", description: `تم استرجاع العشرة رقم ${lastArchivedRound.roundNumber}.` });
   };
   
   const canUndoStartNewRound = currentRound?.playerStates.every(ps => ps.scores.length === 0) && archivedRounds.length > 0;
+  const showDistributionInputColumn = !currentRound?.isConcluded && currentRound?.playerStates.some(p => !p.isBurned);
 
 
   return (
@@ -290,7 +288,7 @@ export default function GameDashboard() {
         <div className="space-y-6">
           <h2 className="text-2xl font-semibold text-center font-headline">
             العشرة الحالية (رقم {currentRound.roundNumber})
-            {currentRound.heroId && <TrophyIcon className="inline-block w-6 h-6 ms-2 text-yellow-500" />}
+            {currentRound.heroId && <TrophyIcon className="inline-block w-6 h-6 ms-2 text-yellow-500" data-ai-hint="trophy award" />}
           </h2>
 
           {currentRound.isConcluded && currentRound.heroId && (
@@ -311,42 +309,74 @@ export default function GameDashboard() {
               </AlertDescription>
             </Alert>
           )}
-
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {currentRound.playerStates.map(ps => (
-              <PlayerCard key={ps.playerId} playerState={ps} onEditScore={handleEditScore} isGameConcluded={currentRound.isConcluded} />
-            ))}
-          </div>
-
-          {!currentRound.isConcluded && currentRound.playerStates.filter(ps => !ps.isBurned).length > 0 && (
+          
+          {currentRound.playerStates.length > 0 ? (
             <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="font-headline text-accent">إضافة توزيعة</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  {currentRound.playerStates.filter(ps => !ps.isBurned).map(ps => (
-                    <div key={ps.playerId} className="flex items-center gap-2">
-                      <label htmlFor={`score-${ps.playerId}`} className="w-1/3 truncate">{ps.name}:</label>
-                      <Input
-                        id={`score-${ps.playerId}`}
-                        type="number"
-                        value={distributionValues[ps.playerId] || ''}
-                        onChange={(e) => setDistributionValues(prev => ({ ...prev, [ps.playerId]: e.target.value }))}
-                        placeholder="النقاط"
-                        className="flex-grow"
-                        aria-label={`نقاط ${ps.name}`}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <Button onClick={handleAddDistribution} className="w-full">إضافة النقاط للتوزيعة</Button>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">اللاعب</TableHead>
+                      <TableHead className="text-right">مجموع النقاط</TableHead>
+                      <TableHead className="text-right">الحالة</TableHead>
+                      {showDistributionInputColumn && <TableHead className="text-right">نقاط التوزيعة</TableHead>}
+                      <TableHead className="text-right">أدوات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {currentRound.playerStates.map(ps => (
+                      <TableRow 
+                        key={ps.playerId} 
+                        className={cn(
+                          ps.isBurned && "bg-destructive/10 flame-animation",
+                          ps.isHero && "border-yellow-500 border-2 bg-yellow-100/50"
+                        )}
+                      >
+                        <TableCell className="font-medium">{ps.name}</TableCell>
+                        <TableCell className="text-lg font-bold">{ps.totalScore}</TableCell>
+                        <TableCell>
+                          {ps.isBurned ? <span className="text-destructive font-semibold flex items-center"><FlameIcon className="w-4 h-4 me-1" data-ai-hint="fire flame"/>محروق!</span> : 
+                           ps.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل العشرة!</span> : 
+                           "في اللعب"}
+                        </TableCell>
+                        {showDistributionInputColumn && (
+                          <TableCell>
+                            {!ps.isBurned ? (
+                              <Input
+                                id={`score-${ps.playerId}`}
+                                type="number"
+                                value={distributionValues[ps.playerId] || ''}
+                                onChange={(e) => setDistributionValues(prev => ({ ...prev, [ps.playerId]: e.target.value }))}
+                                placeholder="النقاط"
+                                className="h-8"
+                                aria-label={`نقاط ${ps.name} للتوزيعة`}
+                              />
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          {!currentRound.isConcluded && !ps.isBurned && (
+                            <EditScoreDialog playerState={ps} onEditScore={handleEditScore} />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
+          ) : (
+            <p className="text-center text-muted-foreground">لا يوجد لاعبون في هذه العشرة بعد.</p>
           )}
+
+          {showDistributionInputColumn && currentRound.playerStates.length > 0 && (
+            <Button onClick={handleAddDistribution} className="w-full mt-4">إضافة النقاط للتوزيعة</Button>
+          )}
+
            {currentRound.playerStates.length > 0 && currentRound.playerStates.filter(ps => !ps.isBurned).length === 0 && !currentRound.isConcluded && (
-             <Alert variant="destructive">
+             <Alert variant="destructive" className="mt-4">
                 <FlameIcon className="h-4 w-4" />
                 <AlertTitle>جميع اللاعبين النشطين احترقوا!</AlertTitle>
                 <AlertDescription>الرجاء الضغط على "عشرة جديدة" لبدء جولة أخرى.</AlertDescription>
@@ -365,3 +395,5 @@ export default function GameDashboard() {
     </div>
   );
 }
+
+    

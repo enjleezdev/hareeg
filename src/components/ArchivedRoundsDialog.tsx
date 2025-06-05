@@ -1,6 +1,7 @@
+
 "use client";
 
-import type { ArchivedGameRound, Player } from '@/lib/types';
+import type { ArchivedGameRound, Player, PlayerRoundState } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -8,14 +9,23 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogDescription,
+  DialogFooter, 
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { FlameIcon } from '@/components/icons/FlameIcon';
 import { TrophyIcon } from '@/components/icons/TrophyIcon';
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from '@/lib/utils';
 
 interface ArchivedRoundsDialogProps {
   archivedRounds: ArchivedGameRound[];
@@ -32,38 +42,79 @@ export function ArchivedRoundsDialog({ archivedRounds, allPlayers }: ArchivedRou
       <DialogTrigger asChild>
         <Button variant="outline">عرض العشرات السابقة</Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>العشرات السابقة</DialogTitle>
           <DialogDescription>
             هنا يمكنك مراجعة نتائج الجولات (العشرات) المنتهية.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="flex-grow">
+        <ScrollArea className="flex-grow pr-6">
           {archivedRounds.length === 0 ? (
             <p className="text-center text-muted-foreground py-4">لا توجد عشرات مؤرشفة بعد.</p>
           ) : (
-            <div className="space-y-6 p-1">
-              {archivedRounds.slice().reverse().map((round) => ( // Show newest first
+            <div className="space-y-8 p-1">
+              {archivedRounds.slice().reverse().map((round) => ( 
                 <div key={round.id} className="p-4 border rounded-lg shadow-sm bg-card">
-                  <h3 className="text-lg font-semibold mb-2 font-headline">
-                    عشرة رقم {round.roundNumber} - {format(new Date(round.startTime), "d MMMM yyyy, HH:mm", { locale: arSA })}
-                    {round.heroId && <TrophyIcon className="inline-block w-5 h-5 ms-2 text-yellow-500" />}
-                  </h3>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xl font-semibold font-headline">
+                      عشرة رقم {round.roundNumber}
+                    </h3>
+                    <div className="text-sm text-muted-foreground">
+                       {format(new Date(round.startTime), "d MMMM yyyy, HH:mm", { locale: arSA })}
+                    </div>
+                  </div>
+                  
                   {round.heroId && (
-                     <p className="text-green-600 font-semibold mb-2">بطل العشرة: {getPlayerName(round.heroId)}</p>
+                     <p className="text-green-600 font-semibold mb-2 flex items-center">
+                        <TrophyIcon className="w-5 h-5 ms-2 text-yellow-500" data-ai-hint="trophy award"/> 
+                        بطل العشرة: {getPlayerName(round.heroId)}
+                     </p>
                   )}
-                  <ul className="space-y-1">
-                    {round.playerStates.map((ps) => (
-                      <li key={ps.playerId} className="flex justify-between items-center text-sm">
-                        <span className="flex items-center">
-                           {getPlayerName(ps.playerId)}: {ps.totalScore}
-                           {ps.isBurned && <FlameIcon className="w-4 h-4 ms-2 text-destructive" />}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                   <p className="text-xs text-muted-foreground mt-2">
+                  {!round.heroId && round.playerStates.every(ps => ps.isBurned) && round.playerStates.length > 0 && (
+                    <p className="text-destructive font-semibold mb-2 flex items-center">
+                        <FlameIcon className="w-5 h-5 ms-2" data-ai-hint="fire flame"/> 
+                        جميع اللاعبين احترقوا
+                     </p>
+                  )}
+                  
+                  {round.playerStates.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-right">اللاعب</TableHead>
+                          <TableHead className="text-right">مجموع النقاط</TableHead>
+                           <TableHead className="text-right w-1/4">سجل النقاط</TableHead>
+                          <TableHead className="text-right">الحالة</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {round.playerStates.map((ps: PlayerRoundState) => (
+                          <TableRow 
+                            key={ps.playerId}
+                            className={cn(
+                              ps.isBurned && "bg-destructive/10",
+                              ps.isHero && "bg-yellow-100/30"
+                            )}
+                          >
+                            <TableCell className="font-medium">{getPlayerName(ps.playerId)}</TableCell>
+                            <TableCell className="font-semibold text-lg">{ps.totalScore}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground break-all">
+                              {ps.scores.join(', ')}
+                            </TableCell>
+                            <TableCell>
+                              {ps.isBurned ? <span className="text-destructive font-semibold flex items-center"><FlameIcon className="w-4 h-4 me-1" data-ai-hint="fire flame"/>محروق</span> : 
+                               ps.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل</span> : 
+                               "أكمل"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                     <p className="text-sm text-muted-foreground">لا يوجد لاعبون مسجلون في هذه العشرة.</p>
+                  )}
+                   <p className="text-xs text-muted-foreground mt-3">
                     انتهت في: {format(new Date(round.endTime), "d MMMM yyyy, HH:mm", { locale: arSA })}
                   </p>
                 </div>
@@ -71,10 +122,14 @@ export function ArchivedRoundsDialog({ archivedRounds, allPlayers }: ArchivedRou
             </div>
           )}
         </ScrollArea>
-         <Button onClick={() => (document.querySelector('[aria-label="Close"]') as HTMLElement)?.click()} className="mt-4">
-            إغلاق
-          </Button>
+         <DialogFooter className="mt-4">
+            <Button onClick={() => (document.querySelector('[aria-label="Close"]') as HTMLElement)?.click()} variant="outline">
+                إغلاق
+            </Button>
+         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+    
