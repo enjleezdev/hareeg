@@ -36,31 +36,35 @@ export function SelectPlayersForNewRoundDialog({
 
   useEffect(() => {
     if (isOpen) {
-      const initialDraft: Player[] = [];
-      let currentPotential = [...allPlayers]; 
-
-      if (currentRoundPlayerIds.length > 0) {
+      // Determine players from the previous round to pre-populate the draft list
+      const playersToPreDraft: Player[] = [];
+      if (currentRoundPlayerIds && currentRoundPlayerIds.length > 0) {
         currentRoundPlayerIds.forEach(id => {
-          const playerToAdd = allPlayers.find(p => p.id === id);
-          if (playerToAdd) {
-            initialDraft.push(playerToAdd);
-            currentPotential = currentPotential.filter(p => p.id !== playerToAdd.id);
+          const player = allPlayers.find(p => p.id === id);
+          if (player) {
+            playersToPreDraft.push(player);
           }
         });
       }
-      
-      setDraftPlayers(initialDraft);
-      setPotentialPlayers(currentPotential.sort((a, b) => a.name.localeCompare(b.name)));
+      setDraftPlayers(playersToPreDraft); // These are initially "Participating Players"
+
+      // Determine players available for selection.
+      // These are "new players" if they are in allPlayers but not in playersToPreDraft.
+      const availableForSelection = allPlayers
+        .filter(p => !playersToPreDraft.some(drafted => drafted.id === p.id))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setPotentialPlayers(availableForSelection); // These are "Available Players"
+
     } else {
       // Reset when closed - conditional update to prevent loops
-      if (draftPlayers.length > 0) {
+      if (draftPlayers.length > 0) { // Only update if not already empty
         setDraftPlayers([]);
       }
-      if (potentialPlayers.length > 0) {
+      if (potentialPlayers.length > 0) { // Only update if not already empty
         setPotentialPlayers([]);
       }
     }
-  }, [isOpen, allPlayers, currentRoundPlayerIds]); // Dependencies remain focused on inputs
+  }, [isOpen, allPlayers, currentRoundPlayerIds]);
 
   const addPlayerToDraft = (player: Player) => {
     setDraftPlayers(prev => [...prev, player]);
@@ -84,7 +88,8 @@ export function SelectPlayersForNewRoundDialog({
 
   const handleConfirm = () => {
     if (draftPlayers.length === 0) {
-        alert("الرجاء اختيار لاعب واحد على الأقل.");
+        // Using alert for simplicity, consider a Toast or inline message for better UX
+        alert("الرجاء اختيار لاعب واحد على الأقل."); 
         return;
     }
     onConfirm(draftPlayers.map(p => p.id));
