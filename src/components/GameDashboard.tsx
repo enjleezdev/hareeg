@@ -132,7 +132,14 @@ export default function GameDashboard() {
             updatedDistributions.push(catchUpDistribution);
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
         } else {
-            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بصفر نقاط.`;
+             updatedDistributions = currentRound.distributions.map(dist => ({
+                ...dist,
+                scores: {
+                    ...dist.scores,
+                    [newPlayerId]: 0 
+                }
+             }));
+            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بصفر نقاط (لم تبدأ التوزيعات بعد).`;
         }
         
         toast({ title: "انضم لاعب!", description: joinMessage });
@@ -468,10 +475,10 @@ export default function GameDashboard() {
 
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <div className="text-center py-2 text-sm text-muted-foreground no-print">
-        تم التصميم والتطوير بواسطة <a href="https://www.enjleez.tech/" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">انجليز تكنولوجــــــي</a>
-      </div>
       <header className="text-center py-6 no-print">
+        <div className="text-center text-sm text-muted-foreground no-print mb-2">
+          تم التصميم والتطوير بواسطة <a href="https://www.enjleez.tech/" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">انجليز تكنولوجــــــي</a>
+        </div>
         <h1 className="text-4xl font-bold font-headline text-primary">دفتر الحريق – كوشتينة 🔥</h1>
         <p className="text-muted-foreground">ما تبقى كيشة وما تلعب طوف</p>
       </header>
