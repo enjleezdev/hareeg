@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
   title: 'دفتر الحريق – كوشتينة',
-  description: 'تطبيق ويب لإدارة لعبة الورق "كوشتينة" بنظام عشرات.',
+  description: 'ما تبقى كيشة وما تلعب طوف',
 };
 
 export default function RootLayout({
