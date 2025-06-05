@@ -132,17 +132,9 @@ export default function GameDashboard() {
             updatedDistributions.push(catchUpDistribution);
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
         } else {
-             const scoresForJoinDistribution: Record<string, number> = {};
-             updatedParticipatingPlayerIds.forEach(pid => {
-                scoresForJoinDistribution[pid] = (pid === newPlayerId) ? 0 : 0; // All players get 0 for this join event
-             });
-             const joinDistribution: Distribution = {
-              id: crypto.randomUUID(),
-              name: `join:${newPlayerId}:${newPlayer.name}`,
-              scores: scoresForJoinDistribution,
-            };
-            updatedDistributions.push(joinDistribution);
-            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط 0.`;
+            // No gameplay distributions yet, player joins silently with 0 points
+            // No "join:..." distribution is created.
+            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية.`;
         }
         
         toast({ title: "انضم لاعب!", description: joinMessage });
@@ -211,7 +203,7 @@ export default function GameDashboard() {
         
         setArchivedRounds(prev => {
             if (prev.find(r => r.id === roundToArchive.id)) {
-                return prev.map(r => r.id === roundToArchive.id ? roundToArchive : r); // Update if exists
+                return prev.map(r => r.id === roundToArchive.id ? roundToArchive : r); 
             }
             return [...prev, roundToArchive];
         });
@@ -270,7 +262,7 @@ export default function GameDashboard() {
     toast({ title: `بدء عشرة جديدة (رقم ${roundCounter})`, description: `تم اختيار ${selectedPlayerIds.length} لاعبين.` });
     setRoundCounter(prev => prev + 1);
     setIsSelectPlayersDialogOpen(false);
-    setHeroForNextRound(undefined); // Clear hero for next round state
+    setHeroForNextRound(undefined); 
   };
 
 
@@ -374,10 +366,7 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        // Recalculate states to check for burning AFTER the currentRound state has been updated
-        // This is implicitly handled by setCurrentRound in internalAddDistribution
-        // For immediate feedback, we can simulate:
-        const distributionsAfterAdjustment = currentRound.distributions; // Already updated by internalAddDistribution
+        const distributionsAfterAdjustment = currentRound.distributions; 
         const statesAfterAdjustment = calculateOverallStates(distributionsAfterAdjustment, currentRound.participatingPlayerIds, allPlayers);
         const playerStateAfterAdjustment = statesAfterAdjustment[playerId];
 
