@@ -11,6 +11,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
 import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { FlameIcon } from '@/components/icons/FlameIcon';
+import { TrophyIcon } from '@/components/icons/TrophyIcon';
 
 
 const BURN_LIMIT = 31;
@@ -207,10 +209,12 @@ export default function GameDashboard() {
       toast({ title: "خطأ", description: "لا توجد عشرات مؤرشفة لاسترجاعها.", variant: "destructive"});
       return;
     }
-    if (currentRound && currentRound.scores.some(s => s !== 0)) { // Check if any score was entered in current round
-         toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية.", variant: "destructive"});
+    // Check if any score was entered in current round for any player state
+    if (currentRound && currentRound.playerStates.some(ps => ps.scores.length > 0 && ps.scores.some(s => s !== 0 || s === 0 /* explicitly allow 0 as a score */) )) {
+      toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية.", variant: "destructive"});
       return;
     }
+
 
     const lastArchivedRound = archivedRounds[archivedRounds.length - 1];
     // Ensure players in the last archived round still exist in allPlayers, or filter/map accordingly.
