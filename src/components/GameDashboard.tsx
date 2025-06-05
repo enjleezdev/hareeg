@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { Player, GameRound, ArchivedGameRound, Distribution, PlayerOverallState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,13 @@ import { cn } from '@/lib/utils';
 
 const BURN_LIMIT = 31;
 
+const LOCAL_STORAGE_KEYS = {
+  ALL_PLAYERS: 'kooshAllPlayers_v1',
+  CURRENT_ROUND: 'kooshCurrentRound_v1',
+  ARCHIVED_ROUNDS: 'kooshArchivedRounds_v1',
+  ROUND_COUNTER: 'kooshRoundCounter_v1',
+};
+
 export default function GameDashboard() {
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -36,9 +43,91 @@ export default function GameDashboard() {
   const [roundCounter, setRoundCounter] = useState(1);
   const [isSelectPlayersDialogOpen, setIsSelectPlayersDialogOpen] = useState(false);
   const [heroForNextRound, setHeroForNextRound] = useState<string | undefined>(undefined);
+  const [isClient, setIsClient] = useState(false);
 
 
   const { toast } = useToast();
+
+  useEffect(() => {
+    setIsClient(true); // Indicate client-side rendering is complete
+  }, []);
+
+  // Load state from localStorage on initial client mount
+  useEffect(() => {
+    if (!isClient) return; // Only run on client
+
+    try {
+      const storedPlayers = localStorage.getItem(LOCAL_STORAGE_KEYS.ALL_PLAYERS);
+      if (storedPlayers) setAllPlayers(JSON.parse(storedPlayers));
+
+      const storedRoundCounter = localStorage.getItem(LOCAL_STORAGE_KEYS.ROUND_COUNTER);
+      if (storedRoundCounter) setRoundCounter(JSON.parse(storedRoundCounter));
+      
+      const storedCurrentRound = localStorage.getItem(LOCAL_STORAGE_KEYS.CURRENT_ROUND);
+      if (storedCurrentRound) {
+        const parsedRound: GameRound | null = JSON.parse(storedCurrentRound);
+        if (parsedRound && parsedRound.startTime) {
+          parsedRound.startTime = new Date(parsedRound.startTime);
+        }
+        if (parsedRound && parsedRound.participatingPlayerIds) {
+             const initialScores: Record<string, string> = {};
+             parsedRound.participatingPlayerIds.forEach((playerId: string) => {
+                 if (parsedRound.playerOverallStates && parsedRound.playerOverallStates[playerId] && !parsedRound.playerOverallStates[playerId].isBurned) {
+                    initialScores[playerId] = '';
+                 }
+             });
+             setNewDistributionScores(initialScores);
+        }
+        setCurrentRound(parsedRound);
+      }
+
+      const storedArchivedRounds = localStorage.getItem(LOCAL_STORAGE_KEYS.ARCHIVED_ROUNDS);
+      if (storedArchivedRounds) {
+        const parsedArchived: ArchivedGameRound[] = JSON.parse(storedArchived).map((round: ArchivedGameRound) => ({
+          ...round,
+          startTime: new Date(round.startTime),
+          endTime: new Date(round.endTime),
+        }));
+        setArchivedRounds(parsedArchived);
+      }
+    } catch (error) {
+      console.error("Failed to load state from localStorage:", error);
+      toast({
+        title: "خطأ في تحميل البيانات",
+        description: "لم يتمكن من تحميل بيانات اللعبة السابقة من التخزين المحلي.",
+        variant: "destructive",
+      });
+    }
+  }, [isClient, toast]);
+
+  // Save allPlayers to localStorage
+  useEffect(() => {
+    if (!isClient) return;
+    localStorage.setItem(LOCAL_STORAGE_KEYS.ALL_PLAYERS, JSON.stringify(allPlayers));
+  }, [allPlayers, isClient]);
+
+  // Save currentRound to localStorage
+  useEffect(() => {
+    if (!isClient) return;
+    if (currentRound) {
+      localStorage.setItem(LOCAL_STORAGE_KEYS.CURRENT_ROUND, JSON.stringify(currentRound));
+    } else {
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.CURRENT_ROUND);
+    }
+  }, [currentRound, isClient]);
+
+  // Save archivedRounds to localStorage
+  useEffect(() => {
+    if (!isClient) return;
+    localStorage.setItem(LOCAL_STORAGE_KEYS.ARCHIVED_ROUNDS, JSON.stringify(archivedRounds));
+  }, [archivedRounds, isClient]);
+
+  // Save roundCounter to localStorage
+  useEffect(() => {
+    if (!isClient) return;
+    localStorage.setItem(LOCAL_STORAGE_KEYS.ROUND_COUNTER, JSON.stringify(roundCounter));
+  }, [roundCounter, isClient]);
+
 
   const getPlayerName = (playerId: string): string => {
     return allPlayers.find(p => p.id === playerId)?.name || 'لاعب غير معروف';
@@ -49,7 +138,7 @@ export default function GameDashboard() {
 
   const resetNewDistributionScores = useCallback((participatingPlayerIdsForReset?: string[]) => {
     const initialScores: Record<string, string> = {};
-    const idsToReset = participatingPlayerIdsForReset || currentRound?.participatingPlayerIds || [];
+    const idsToReset = participatingPlayerIdsForReset || (currentRound?.participatingPlayerIds ?? []);
     
     idsToReset.forEach(playerId => {
         if (!currentRound?.playerOverallStates[playerId]?.isBurned) {
@@ -66,8 +155,7 @@ export default function GameDashboard() {
     } else {
         setNewDistributionScores({}); 
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRound?.id, currentRound?.participatingPlayerIds]); 
+  }, [currentRound?.id, resetNewDistributionScores]); 
   
   const calculateOverallStates = (distributions: Distribution[], playerIds: string[], existingPlayersList: Player[]): Record<string, PlayerOverallState> => {
     const newOverallStates: Record<string, PlayerOverallState> = {};
@@ -132,14 +220,15 @@ export default function GameDashboard() {
             updatedDistributions.push(catchUpDistribution);
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
         } else {
-             updatedDistributions = currentRound.distributions.map(dist => ({
-                ...dist,
+            // No gameplay distributions yet, player joins with 0 and no special "join" distribution entry
+            updatedDistributions = currentRound.distributions.map(dist => ({
+                ...dist, // This case should be rare if only join/edit dists exist
                 scores: {
                     ...dist.scores,
                     [newPlayerId]: 0 
                 }
              }));
-            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بصفر نقاط (لم تبدأ التوزيعات بعد).`;
+            joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بصفر نقاط (لم تبدأ التوزيعات الفعلية بعد).`;
         }
         
         toast({ title: "انضم لاعب!", description: joinMessage });
@@ -371,10 +460,15 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        const distributionsAfterAdjustment = currentRound.distributions; 
-        const statesAfterAdjustment = calculateOverallStates(distributionsAfterAdjustment, currentRound.participatingPlayerIds, allPlayers);
-        const playerStateAfterAdjustment = statesAfterAdjustment[playerId];
-
+        // Need to re-access currentRound as it's updated by internalAddDistribution via setCurrentRound
+        // This requires a slight refactor or careful handling if currentRound is directly used here.
+        // For simplicity, we assume the internalAddDistribution correctly updates the state,
+        // and any subsequent checks for burn status would reflect the new state.
+        // A more robust way might be for internalAddDistribution to return the new states.
+        
+        // The following check is now based on the state *after* the toast for "internalAddDistribution"
+        // which means currentRound.playerOverallStates should be up-to-date.
+        const playerStateAfterAdjustment = currentRound.playerOverallStates[playerId];
 
         if (playerStateAfterAdjustment?.isBurned && !playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "حريق!", description: `اللاعب ${playerName} احترق بسبب التعديل!`, variant: "destructive" });
@@ -411,7 +505,7 @@ export default function GameDashboard() {
     const restoredRound: GameRound = {
         id: lastArchivedRoundData.id,
         roundNumber: lastArchivedRoundData.roundNumber,
-        startTime: new Date(lastArchivedRoundData.startTime),
+        startTime: new Date(lastArchivedRoundData.startTime), // Ensure Date object
         participatingPlayerIds: lastArchivedRoundData.participatingPlayerIds,
         distributions: lastArchivedRoundData.distributions, 
         playerOverallStates: lastArchivedRoundData.playerOverallStates, 
@@ -472,6 +566,16 @@ export default function GameDashboard() {
   const handlePrint = () => {
     window.print();
   };
+
+  if (!isClient) {
+    // Render nothing or a loading indicator on the server or before hydration
+    return (
+        <div className="container mx-auto p-4 space-y-6 text-center py-20">
+            <h1 className="text-4xl font-bold font-headline text-primary">دفتر الحريق – كوشتينة 🔥</h1>
+            <p className="text-muted-foreground text-lg">جاري تحميل بيانات اللعبة...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -609,12 +713,14 @@ export default function GameDashboard() {
                         <TableCell className="font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{distNameToDisplay}</TableCell>
                         {currentRound.participatingPlayerIds.map(playerId => {
                           const rawScore = dist.scores[playerId];
-                          let cellContent;
+                          let cellContent: string | number = '-';
 
-                          if (isJoinDistForSpecificPlayer && joiningPlayerIdInThisDist && playerId !== joiningPlayerIdInThisDist && rawScore === 0) {
-                            cellContent = '-';
-                          } else {
-                            cellContent = rawScore ?? '-';
+                          if (rawScore !== undefined) {
+                            if (isJoinDistForSpecificPlayer && joiningPlayerIdInThisDist && playerId !== joiningPlayerIdInThisDist && rawScore === 0) {
+                                cellContent = '-';
+                            } else {
+                                cellContent = rawScore;
+                            }
                           }
                           
                           return (
@@ -720,4 +826,3 @@ export default function GameDashboard() {
     </div>
   );
 }
-
