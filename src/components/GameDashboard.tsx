@@ -81,9 +81,10 @@ export default function GameDashboard() {
         setCurrentRound(parsedRound);
       }
 
+      // Ensure consistent use of storedArchivedRounds
       const storedArchivedRounds = localStorage.getItem(LOCAL_STORAGE_KEYS.ARCHIVED_ROUNDS);
       if (storedArchivedRounds) {
-        const parsedArchived: ArchivedGameRound[] = JSON.parse(storedArchived).map((round: ArchivedGameRound) => ({
+        const parsedArchived: ArchivedGameRound[] = JSON.parse(storedArchivedRounds).map((round: ArchivedGameRound) => ({
           ...round,
           startTime: new Date(round.startTime),
           endTime: new Date(round.endTime),
@@ -221,8 +222,10 @@ export default function GameDashboard() {
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
         } else {
             // No gameplay distributions yet, player joins with 0 and no special "join" distribution entry
+            // We only update the distributions to include the new player with 0 score in existing "join" or "edit" distributions
+            // This primarily ensures their column appears if those are the only distributions.
             updatedDistributions = currentRound.distributions.map(dist => ({
-                ...dist, // This case should be rare if only join/edit dists exist
+                ...dist,
                 scores: {
                     ...dist.scores,
                     [newPlayerId]: 0 
@@ -464,7 +467,6 @@ export default function GameDashboard() {
         // This requires a slight refactor or careful handling if currentRound is directly used here.
         // For simplicity, we assume the internalAddDistribution correctly updates the state,
         // and any subsequent checks for burn status would reflect the new state.
-        // A more robust way might be for internalAddDistribution to return the new states.
         
         // The following check is now based on the state *after* the toast for "internalAddDistribution"
         // which means currentRound.playerOverallStates should be up-to-date.
@@ -826,3 +828,6 @@ export default function GameDashboard() {
     </div>
   );
 }
+
+
+    
