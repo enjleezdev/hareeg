@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { ArchivedGameRound, Player, PlayerRoundState } from '@/lib/types';
+import type { ArchivedGameRound, Player, PlayerOverallState } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -54,7 +54,9 @@ export function ArchivedRoundsDialog({ archivedRounds, allPlayers }: ArchivedRou
             <p className="text-center text-muted-foreground py-4">لا توجد عشرات مؤرشفة بعد.</p>
           ) : (
             <div className="space-y-8 p-1">
-              {archivedRounds.slice().reverse().map((round) => ( 
+              {archivedRounds.slice().reverse().map((round) => {
+                const playerStatesArray = round.playerOverallStates ? Object.values(round.playerOverallStates) : [];
+                return (
                 <div key={round.id} className="p-4 border rounded-lg shadow-sm bg-card">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-xl font-semibold font-headline">
@@ -71,44 +73,49 @@ export function ArchivedRoundsDialog({ archivedRounds, allPlayers }: ArchivedRou
                         بطل العشرة: {getPlayerName(round.heroId)}
                      </p>
                   )}
-                  {!round.heroId && round.playerStates.every(ps => ps.isBurned) && round.playerStates.length > 0 && (
+                  {!round.heroId && playerStatesArray.length > 0 && playerStatesArray.every(ps => ps.isBurned) && (
                     <p className="text-destructive font-semibold mb-2 flex items-center">
                         <FlameIcon className="w-5 h-5 ms-2" data-ai-hint="fire flame"/> 
                         جميع اللاعبين احترقوا
                      </p>
                   )}
                   
-                  {round.playerStates.length > 0 ? (
+                  {playerStatesArray.length > 0 ? (
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="text-right">اللاعب</TableHead>
                           <TableHead className="text-right">مجموع النقاط</TableHead>
-                           <TableHead className="text-right w-1/4">سجل النقاط</TableHead>
+                           <TableHead className="text-right w-1/4">سجل النقاط (التوزيعات)</TableHead>
                           <TableHead className="text-right">الحالة</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {round.playerStates.map((ps: PlayerRoundState) => (
-                          <TableRow 
-                            key={ps.playerId}
-                            className={cn(
-                              ps.isBurned && "bg-destructive/10",
-                              ps.isHero && "bg-yellow-100/30"
-                            )}
-                          >
-                            <TableCell className="font-medium">{getPlayerName(ps.playerId)}</TableCell>
-                            <TableCell className="font-semibold text-lg">{ps.totalScore}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground break-all">
-                              {ps.scores.join(', ')}
-                            </TableCell>
-                            <TableCell>
-                              {ps.isBurned ? <span className="text-destructive font-semibold flex items-center"><FlameIcon className="w-4 h-4 me-1" data-ai-hint="fire flame"/>محروق</span> : 
-                               ps.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل</span> : 
-                               "أكمل"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {playerStatesArray.map((ps: PlayerOverallState) => {
+                          const playerDistributionScores = round.distributions
+                            .map(dist => dist.scores[ps.playerId] ?? 0)
+                            .join(', ');
+                          return (
+                            <TableRow 
+                              key={ps.playerId}
+                              className={cn(
+                                ps.isBurned && "bg-destructive/10",
+                                ps.isHero && "bg-yellow-100/30"
+                              )}
+                            >
+                              <TableCell className="font-medium">{getPlayerName(ps.playerId)}</TableCell>
+                              <TableCell className="font-semibold text-lg">{ps.totalScore}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground break-all">
+                                {playerDistributionScores}
+                              </TableCell>
+                              <TableCell>
+                                {ps.isBurned ? <span className="text-destructive font-semibold flex items-center"><FlameIcon className="w-4 h-4 me-1" data-ai-hint="fire flame"/>محروق</span> : 
+                                 ps.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل</span> : 
+                                 "أكمل"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   ) : (
@@ -118,7 +125,8 @@ export function ArchivedRoundsDialog({ archivedRounds, allPlayers }: ArchivedRou
                     انتهت في: {format(new Date(round.endTime), "d MMMM yyyy, HH:mm", { locale: arSA })}
                   </p>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </ScrollArea>
@@ -131,5 +139,3 @@ export function ArchivedRoundsDialog({ archivedRounds, allPlayers }: ArchivedRou
     </Dialog>
   );
 }
-
-    
