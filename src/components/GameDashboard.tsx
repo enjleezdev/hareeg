@@ -125,6 +125,8 @@ export default function GameDashboard() {
         ...currentRound, 
         endTime: new Date(), 
         isConcluded: true,
+        // Ensure playerOverallStates are correctly reflecting the final state before archiving
+        playerOverallStates: calculateOverallStates(currentRound.distributions, currentRound.participatingPlayerIds, allPlayers),
       };
       setArchivedRounds(prev => [...prev, roundToArchive]);
 
@@ -241,33 +243,32 @@ export default function GameDashboard() {
     if (!currentRound || currentRound.isConcluded) return;
     
     const playerName = getPlayerName(playerId);
+    const playerStateBeforeAdjustment = currentRound.playerOverallStates[playerId];
+
     const scoresForAdjustment: Record<string, number> = {};
     currentRound.participatingPlayerIds.forEach(pid => {
         scoresForAdjustment[pid] = (pid === playerId) ? adjustment : 0;
     });
 
     const success = internalAddDistribution(scoresForAdjustment, `تعديل لـ ${playerName} (${adjustment > 0 ? '+' : ''}${adjustment})`);
+    
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        // This part needs to access the state *after* internalAddDistribution has run
-        // We need to be careful with state updates timing. Let's use a useEffect or recalculate locally if complex.
-        // For simplicity, we re-calculate based on the *new* distributions list for the toast.
-        const playerStateBeforeAdjustment = currentRound.playerOverallStates[playerId]; // State before this adjustment distribution
+        // To check for burn status change, we need to access the state *after* internalAddDistribution has updated it.
+        // Since setCurrentRound is async, we rely on the useEffect or a callback if direct access is needed.
+        // For this specific toast logic, we can deduce the new state by applying the adjustment locally for the check.
+        // Or, better, let the main state update and a subsequent render + useEffect handle this if it becomes complex.
+        // For now, we check the state immediately after the *synchronous part* of internalAddDistribution before it calls setCurrentRound.
         
-        // Temporarily create distributions list that *would* exist after adjustment
-        const tempDistributions = [...currentRound.distributions, {id: '_temp_adj', name: 'temp_adj', scores: scoresForAdjustment}];
-        const newOverallStatesAfterAdjustment = calculateOverallStates(tempDistributions, currentRound.participatingPlayerIds, allPlayers);
-        const newPlayerState = newOverallStatesAfterAdjustment[playerId];
+        // Re-calculate locally to determine if the status changed due to *this* adjustment for the toast message
+        const temporaryDistributions = [...currentRound.distributions, { id: '_temp_adj', name: 'temp_adj', scores: scoresForAdjustment }];
+        const overallStatesAfterTempAdjustment = calculateOverallStates(temporaryDistributions, currentRound.participatingPlayerIds, allPlayers);
+        const playerStateAfterAdjustment = overallStatesAfterTempAdjustment[playerId];
 
-        // Check currentRound from state for the latest after `internalAddDistribution`
-        // The `setCurrentRound` inside `internalAddDistribution` will trigger a re-render,
-        // at which point `currentRound.playerOverallStates[playerId]` would be updated.
-        // However, for immediate toast, we might need to rely on the calculated `newPlayerState`.
-
-        if (newPlayerState.isBurned && !playerStateBeforeAdjustment?.isBurned) {
+        if (playerStateAfterAdjustment?.isBurned && !playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "حريق!", description: `اللاعب ${playerName} احترق بسبب التعديل!`, variant: "destructive" });
-        } else if (!newPlayerState.isBurned && playerStateBeforeAdjustment?.isBurned) {
+        } else if (!playerStateAfterAdjustment?.isBurned && playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "عاد للحياة!", description: `اللاعب ${playerName} لم يعد محروقاً بعد التعديل.`});
         }
     }
@@ -278,8 +279,8 @@ export default function GameDashboard() {
       toast({ title: "خطأ", description: "لا توجد عشرات مؤرشفة لاسترجاعها.", variant: "destructive"});
       return;
     }
-    if (currentRound && currentRound.distributions.length > 0) {
-      toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية.", variant: "destructive"});
+    if (currentRound && currentRound.distributions.length > 0 && !currentRound.isConcluded) {
+      toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية. قم بأرشفة العشرة الحالية أولاً أو تراجع عن التوزيعات.", variant: "destructive"});
       return;
     }
 
@@ -290,18 +291,26 @@ export default function GameDashboard() {
         roundNumber: lastArchivedRoundData.roundNumber,
         startTime: new Date(lastArchivedRoundData.startTime),
         participatingPlayerIds: lastArchivedRoundData.participatingPlayerIds,
-        distributions: lastArchivedRoundData.distributions, // Directly use distributions
-        playerOverallStates: lastArchivedRoundData.playerOverallStates, // Directly use states
+        distributions: lastArchivedRoundData.distributions, 
+        playerOverallStates: lastArchivedRoundData.playerOverallStates, 
         heroId: lastArchivedRoundData.heroId,
         isConcluded: lastArchivedRoundData.isConcluded,
     };
     
-    const restoredPlayerDetails: Player[] = Object.values(lastArchivedRoundData.playerOverallStates).map(pos => ({id: pos.playerId, name: pos.name}));
-    const currentAllPlayerIds = new Set(allPlayers.map(p => p.id));
-    const newPlayersToAdd = restoredPlayerDetails.filter(p => !currentAllPlayerIds.has(p.id));
-    if (newPlayersToAdd.length > 0) {
-      setAllPlayers(prev => [...prev, ...newPlayersToAdd]);
-    }
+    // Update allPlayers list to include any players from the restored round that might not be in the current allPlayers list
+    // (e.g., if players were removed after the round was archived)
+    const restoredPlayerDetailsFromStates = Object.values(lastArchivedRoundData.playerOverallStates).map(pos => ({id: pos.playerId, name: pos.name}));
+    
+    setAllPlayers(prevAllPlayers => {
+        const existingPlayerIds = new Set(prevAllPlayers.map(p => p.id));
+        const playersToUpdate = [...prevAllPlayers];
+        restoredPlayerDetailsFromStates.forEach(restoredPlayer => {
+            if (!existingPlayerIds.has(restoredPlayer.id)) {
+                playersToUpdate.push({id: restoredPlayer.id, name: restoredPlayer.name});
+            }
+        });
+        return playersToUpdate;
+    });
 
 
     setCurrentRound(restoredRound);
@@ -311,7 +320,7 @@ export default function GameDashboard() {
     toast({ title: "تم الاسترجاع", description: `تم استرجاع العشرة رقم ${restoredRound.roundNumber}.` });
   };
   
-  const canUndoStartNewRound = currentRound?.distributions.length === 0 && archivedRounds.length > 0;
+  const canUndoStartNewRound = (currentRound?.distributions.length === 0 || currentRound?.isConcluded === true) && archivedRounds.length > 0;
 
 
   return (
@@ -393,11 +402,10 @@ export default function GameDashboard() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-right sticky left-0 bg-card z-10 min-w-[100px]">التوزيعة</TableHead>
+                    <TableHead className="text-right sticky left-0 bg-card z-10 min-w-[120px]">التوزيعة</TableHead>
                     {currentRound.participatingPlayerIds.map(playerId => (
                       <TableHead key={playerId} className="text-right min-w-[100px]">{getPlayerName(playerId)}</TableHead>
                     ))}
-                     {!currentRound.isConcluded && <TableHead className="text-right min-w-[80px]">أدوات</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -407,24 +415,22 @@ export default function GameDashboard() {
                     {currentRound.participatingPlayerIds.map(playerId => {
                       const playerState = currentRound.playerOverallStates[playerId];
                       return (
-                        <TableCell key={playerId} className={cn(playerState?.isBurned && "text-destructive flame-animation")}>
+                        <TableCell key={playerId} className={cn("text-lg",playerState?.isBurned && "text-destructive flame-animation")}>
                           {playerState?.totalScore ?? 0}
                         </TableCell>
                       );
                     })}
-                     {!currentRound.isConcluded && <TableCell></TableCell>} {/* Empty cell for tools column */}
                   </TableRow>
 
-                  {/* Distribution Rows */}
-                  {currentRound.distributions.map((dist) => (
+                  {/* Distribution Rows - Reversed order: Newest on top */}
+                  {currentRound.distributions.slice().reverse().map((dist) => (
                     <TableRow key={dist.id}>
                       <TableCell className="font-medium sticky left-0 bg-card z-10">{dist.name}</TableCell>
                       {currentRound.participatingPlayerIds.map(playerId => (
-                        <TableCell key={playerId} className={cn(dist.scores[playerId] < 0 && "bg-red-100")}>
+                        <TableCell key={playerId} className={cn(dist.scores[playerId] < 0 && "bg-red-100/70")}>
                           {dist.scores[playerId] ?? '-'}
                         </TableCell>
                       ))}
-                      {!currentRound.isConcluded && <TableCell></TableCell>} {/* Empty cell for tools column */}
                     </TableRow>
                   ))}
 
@@ -449,48 +455,38 @@ export default function GameDashboard() {
                           )}
                         </TableCell>
                       ))}
-                      <TableCell></TableCell> {/* Empty cell for tools column */}
                     </TableRow>
                   )}
                   
-                  {/* Status Row */}
+                  {/* Status Row & Edit Tools */}
                   <TableRow className="bg-secondary/50">
-                    <TableCell className="font-semibold sticky left-0 bg-secondary/50 z-10">الحالة</TableCell>
+                    <TableCell className="font-semibold sticky left-0 bg-secondary/50 z-10">
+                         الحالة
+                         {!currentRound.isConcluded && <span className="ms-1 text-xs font-normal">(تعديل)</span>}
+                    </TableCell>
                     {currentRound.participatingPlayerIds.map(playerId => {
                       const playerState = currentRound.playerOverallStates[playerId];
                       return (
-                        <TableCell key={playerId}>
-                          {playerState?.isBurned ? <span className="text-destructive font-semibold flex items-center"><FlameIcon className="w-4 h-4 me-1" data-ai-hint="fire flame"/>محروق!</span> : 
-                           playerState?.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل العشرة!</span> : 
-                           "في اللعب"}
+                        <TableCell key={playerId} className="relative">
+                          <div className="flex items-center justify-end">
+                            {playerState?.isBurned ? <span className="text-destructive font-semibold flex items-center"><FlameIcon className="w-4 h-4 me-1" data-ai-hint="fire flame"/>محروق!</span> : 
+                             playerState?.isHero ? <span className="text-yellow-600 font-semibold flex items-center"><TrophyIcon className="w-4 h-4 me-1" data-ai-hint="trophy award"/>بطل العشرة!</span> : 
+                             "في اللعب"}
+                            
+                            {!currentRound.isConcluded && (
+                               <EditScoreDialog 
+                                   playerState={{ 
+                                       playerId: playerId, 
+                                       name: getPlayerName(playerId), 
+                                       totalScore: playerState?.totalScore || 0,
+                                   }} 
+                                   onEditScore={handleEditScore} 
+                               />
+                            )}
+                          </div>
                         </TableCell>
                       );
                     })}
-                     {!currentRound.isConcluded && 
-                        <TableCell>
-                            {currentRound.participatingPlayerIds.filter(pid => !currentRound.playerOverallStates[pid]?.isBurned).map(pid => (
-                                 <EditScoreDialog 
-                                     key={`edit-${pid}`}
-                                     playerState={{ 
-                                         playerId: pid, 
-                                         name: getPlayerName(pid), 
-                                         totalScore: currentRound.playerOverallStates[pid]?.totalScore || 0,
-                                         // For PlayerRoundState, scores[] might not be directly available or relevant here for an adjustment distribution
-                                         // Passing empty or relevant if needed by dialog, but dialog only uses totalScore and name
-                                         scores: currentRound.distributions.map(d => d.scores[pid] || 0), 
-                                         isBurned: currentRound.playerOverallStates[pid]?.isBurned || false,
-                                         // PlayerOverallState doesn't have individual 'scores', but PlayerRoundState did.
-                                         // The EditScoreDialog was taking PlayerRoundState.
-                                         // We need to make sure the dialog gets what it expects or adapt the dialog.
-                                         // Let's keep the structure for playerState as close to PlayerOverallState for consistency
-                                         // and ensure EditScoreDialog can work with it.
-                                         // EditScoreDialog uses 'name' and 'totalScore' primarily from playerState.
-                                     }} 
-                                     onEditScore={handleEditScore} 
-                                 />
-                            ))}
-                        </TableCell>
-                     }
                   </TableRow>
                 </TableBody>
               </Table>
@@ -522,3 +518,4 @@ export default function GameDashboard() {
   );
 }
 
+    
