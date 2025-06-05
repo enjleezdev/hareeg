@@ -255,13 +255,6 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        // To check for burn status change, we need to access the state *after* internalAddDistribution has updated it.
-        // Since setCurrentRound is async, we rely on the useEffect or a callback if direct access is needed.
-        // For this specific toast logic, we can deduce the new state by applying the adjustment locally for the check.
-        // Or, better, let the main state update and a subsequent render + useEffect handle this if it becomes complex.
-        // For now, we check the state immediately after the *synchronous part* of internalAddDistribution before it calls setCurrentRound.
-        
-        // Re-calculate locally to determine if the status changed due to *this* adjustment for the toast message
         const temporaryDistributions = [...currentRound.distributions, { id: '_temp_adj', name: 'temp_adj', scores: scoresForAdjustment }];
         const overallStatesAfterTempAdjustment = calculateOverallStates(temporaryDistributions, currentRound.participatingPlayerIds, allPlayers);
         const playerStateAfterAdjustment = overallStatesAfterTempAdjustment[playerId];
@@ -297,8 +290,6 @@ export default function GameDashboard() {
         isConcluded: lastArchivedRoundData.isConcluded,
     };
     
-    // Update allPlayers list to include any players from the restored round that might not be in the current allPlayers list
-    // (e.g., if players were removed after the round was archived)
     const restoredPlayerDetailsFromStates = Object.values(lastArchivedRoundData.playerOverallStates).map(pos => ({id: pos.playerId, name: pos.name}));
     
     setAllPlayers(prevAllPlayers => {
@@ -327,7 +318,7 @@ export default function GameDashboard() {
     <div className="container mx-auto p-4 space-y-6">
       <header className="text-center py-6">
         <h1 className="text-4xl font-bold font-headline text-primary">دفتر الحريق – كوشتينة 🔥</h1>
-        <p className="text-muted-foreground">أدر نقاط لعبتك بسهولة واعرف مين المحروق ومين البطل!</p>
+        <p className="text-muted-foreground">ما تبقى كيشة وما تلعب طوف</p>
       </header>
 
       <Card className="shadow-lg">
