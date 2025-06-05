@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArchivedRoundsDialog } from './ArchivedRoundsDialog';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
-import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle } from 'lucide-react';
+import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Minus } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FlameIcon } from '@/components/icons/FlameIcon';
 import { TrophyIcon } from '@/components/icons/TrophyIcon';
@@ -125,7 +125,6 @@ export default function GameDashboard() {
         ...currentRound, 
         endTime: new Date(), 
         isConcluded: true,
-        // Ensure playerOverallStates are correctly reflecting the final state before archiving
         playerOverallStates: calculateOverallStates(currentRound.distributions, currentRound.participatingPlayerIds, allPlayers),
       };
       setArchivedRounds(prev => [...prev, roundToArchive]);
@@ -313,6 +312,26 @@ export default function GameDashboard() {
   
   const canUndoStartNewRound = (currentRound?.distributions.length === 0 || currentRound?.isConcluded === true) && archivedRounds.length > 0;
 
+  const handleMakeScoreNegative = (playerId: string) => {
+    setNewDistributionScores(prevScores => {
+      const currentScoreStr = prevScores[playerId] || '';
+      const scoreNum = parseFloat(currentScoreStr);
+  
+      if (isNaN(scoreNum)) {
+        return prevScores; // Not a number, do nothing
+      }
+  
+      if (scoreNum > 0) {
+        return { ...prevScores, [playerId]: (-scoreNum).toString() };
+      } else if (scoreNum === 0 && !Object.is(scoreNum, -0) ) { 
+        // If it's positive zero, make it "-0" for visual feedback
+        // The input type="number" will still treat -0 as 0 for submission if not careful
+        return { ...prevScores, [playerId]: "-0"};
+      }
+      // If already negative or -0, do nothing
+      return prevScores; 
+    });
+  };
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -432,15 +451,26 @@ export default function GameDashboard() {
                       {currentRound.participatingPlayerIds.map(playerId => (
                         <TableCell key={playerId}>
                           {!currentRound.playerOverallStates[playerId]?.isBurned ? (
-                            <Input
-                              id={`new-score-${playerId}`}
-                              type="number"
-                              value={newDistributionScores[playerId] || ''}
-                              onChange={(e) => setNewDistributionScores(prev => ({ ...prev, [playerId]: e.target.value }))}
-                              placeholder="0"
-                              className="h-8 w-full"
-                              aria-label={`نقاط ${getPlayerName(playerId)} للتوزيعة الجديدة`}
-                            />
+                            <div className="flex items-center gap-1">
+                              <Input
+                                id={`new-score-${playerId}`}
+                                type="number" 
+                                value={newDistributionScores[playerId] || ''}
+                                onChange={(e) => setNewDistributionScores(prev => ({ ...prev, [playerId]: e.target.value }))}
+                                placeholder="0"
+                                className="h-8 w-full"
+                                aria-label={`نقاط ${getPlayerName(playerId)} للتوزيعة الجديدة`}
+                              />
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 p-1.5"
+                                onClick={() => handleMakeScoreNegative(playerId)}
+                                aria-label={`تحويل نقاط ${getPlayerName(playerId)} إلى سالب`}
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
@@ -508,5 +538,3 @@ export default function GameDashboard() {
     </div>
   );
 }
-
-    
