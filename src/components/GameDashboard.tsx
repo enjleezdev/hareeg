@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Player, GameRound, ArchivedGameRound, Distribution, PlayerOverallState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { ArchivedRoundsDialog } from './ArchivedRoundsDialog';
 import { SelectPlayersForNewRoundDialog } from './SelectPlayersForNewRoundDialog';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
-import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Minus, ArrowUp, ArrowDown, XCircle } from 'lucide-react';
+import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Minus } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FlameIcon } from '@/components/icons/FlameIcon';
 import { TrophyIcon } from '@/components/icons/TrophyIcon';
@@ -50,7 +50,6 @@ export default function GameDashboard() {
     const idsToReset = participatingPlayerIdsForReset || currentRound?.participatingPlayerIds || [];
     
     idsToReset.forEach(playerId => {
-        // Only reset for players who are not burned (or if playerOverallStates is not yet populated for them)
         if (!currentRound?.playerOverallStates[playerId]?.isBurned) {
           initialScores[playerId] = '';
         }
@@ -60,12 +59,10 @@ export default function GameDashboard() {
 
 
   useEffect(() => {
-    // This effect ensures scores are reset if the round ID changes OR if the set of participating players changes.
-    // The latter can happen if a new round starts with a different set of players.
     if (currentRound) {
         resetNewDistributionScores(currentRound.participatingPlayerIds);
     } else {
-        setNewDistributionScores({}); // Clear scores if no current round
+        setNewDistributionScores({}); 
     }
   }, [currentRound?.id, currentRound?.participatingPlayerIds, resetNewDistributionScores]);
   
@@ -83,12 +80,6 @@ export default function GameDashboard() {
     const newPlayer: Player = { id: newPlayerId, name: newPlayerName.trim() };
     const updatedAllPlayers = [...allPlayers, newPlayer];
     setAllPlayers(updatedAllPlayers);
-
-    // Do not automatically add new player to currentRound. Player selection is handled by SelectPlayersForNewRoundDialog.
-    // If a round is active, the user must decide if this new player joins via a new round.
-    // However, if NO round is active, and this is the first player, they could be prepped.
-    // For simplicity, handleAddPlayer only adds to allPlayers. Round participation is explicit.
-
     setNewPlayerName('');
     toast({ title: "تمت الإضافة", description: `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.` });
   };
@@ -117,7 +108,7 @@ export default function GameDashboard() {
         const roundToArchive: ArchivedGameRound = {
             ...currentRound,
             endTime: new Date(),
-            isConcluded: true, // Mark as concluded regardless of hero status when manually archiving
+            isConcluded: true, 
             playerOverallStates: calculateOverallStates(currentRound.distributions, currentRound.participatingPlayerIds, allPlayers),
          };
         setArchivedRounds(prev => [...prev, roundToArchive]);
@@ -128,9 +119,9 @@ export default function GameDashboard() {
     if (currentRound && !currentRound.isConcluded) {
       const confirmStartNew = window.confirm("العشرة الحالية لم تنته بعد. هل أنت متأكد أنك تريد بدء عشرة جديدة وأرشفة الحالية؟");
       if (!confirmStartNew) return;
-      archiveCurrentRound(); // Archive the unfinished round
+      archiveCurrentRound(); 
     } else if (currentRound && currentRound.isConcluded) {
-       archiveCurrentRound(); // Archive the finished round
+       archiveCurrentRound(); 
     }
 
     if (allPlayers.length === 0) {
@@ -158,7 +149,7 @@ export default function GameDashboard() {
       isConcluded: false,
     });
     setRoundCounter(prev => prev + 1);
-    resetNewDistributionScores(selectedPlayerIds); // Pass selected IDs to reset scores for correct players
+    resetNewDistributionScores(selectedPlayerIds); 
     toast({ title: `بدء عشرة جديدة (رقم ${roundCounter})`, description: "تم تجهيز لوحة النقاط باللاعبين المختارين." });
     setIsSelectPlayersDialogOpen(false);
   };
@@ -259,8 +250,7 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        // Recalculate temporary states to check for burn status change due to adjustment
-        const temporaryDistributions = currentRound.distributions; // Already includes the adjustment distribution
+        const temporaryDistributions = currentRound.distributions; 
         const overallStatesAfterTempAdjustment = calculateOverallStates(temporaryDistributions, currentRound.participatingPlayerIds, allPlayers);
         const playerStateAfterAdjustment = overallStatesAfterTempAdjustment[playerId];
 
@@ -295,7 +285,6 @@ export default function GameDashboard() {
         isConcluded: lastArchivedRoundData.isConcluded,
     };
     
-    // Ensure all players from the restored round are in the master `allPlayers` list
     const restoredPlayerDetailsFromStates = Object.values(lastArchivedRoundData.playerOverallStates).map(pos => ({id: pos.playerId, name: pos.name}));
     
     setAllPlayers(prevAllPlayers => {
@@ -304,7 +293,7 @@ export default function GameDashboard() {
         restoredPlayerDetailsFromStates.forEach(restoredPlayer => {
             if (!existingPlayerIds.has(restoredPlayer.id)) {
                 playersToUpdate.push({id: restoredPlayer.id, name: restoredPlayer.name});
-            } else { // Ensure names are up-to-date from archived state if they exist
+            } else { 
                 const playerInAll = playersToUpdate.find(p => p.id === restoredPlayer.id);
                 if (playerInAll && playerInAll.name !== restoredPlayer.name) {
                     playerInAll.name = restoredPlayer.name;
@@ -341,6 +330,8 @@ export default function GameDashboard() {
       return prevScores; 
     });
   };
+
+  const participatingPlayerIdsForDialog = useMemo(() => currentRound?.participatingPlayerIds || [], [currentRound]);
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -395,7 +386,7 @@ export default function GameDashboard() {
         onOpenChange={setIsSelectPlayersDialogOpen}
         allPlayers={allPlayers}
         onConfirm={handleStartRoundWithSelectedPlayers}
-        currentRoundPlayerIds={currentRound?.participatingPlayerIds}
+        currentRoundPlayerIds={participatingPlayerIdsForDialog}
       />
 
       {currentRound && currentRound.participatingPlayerIds.length > 0 ? (
@@ -437,7 +428,6 @@ export default function GameDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {/* Total Scores Row */}
                   <TableRow className="bg-secondary/50 font-bold">
                     <TableCell className="sticky left-0 bg-secondary/50 z-10 whitespace-nowrap">المجموع</TableCell>
                     {currentRound.participatingPlayerIds.map(playerId => {
@@ -450,7 +440,6 @@ export default function GameDashboard() {
                     })}
                   </TableRow>
 
-                  {/* Distribution Rows - Newest on top */}
                   {currentRound.distributions.slice().reverse().map((dist) => (
                     <TableRow key={dist.id}>
                       <TableCell className="font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{dist.name}</TableCell>
@@ -462,7 +451,6 @@ export default function GameDashboard() {
                     </TableRow>
                   ))}
 
-                  {/* Row for new distribution input */}
                   {!currentRound.isConcluded && (
                     <TableRow>
                       <TableCell className="font-semibold sticky left-0 bg-card z-10 whitespace-nowrap">نقاط التوزيعة الجديدة</TableCell>
@@ -497,7 +485,6 @@ export default function GameDashboard() {
                     </TableRow>
                   )}
                   
-                  {/* Status Row & Edit Tools */}
                   <TableRow className="bg-secondary/50">
                     <TableCell className="font-semibold sticky left-0 bg-secondary/50 z-10 whitespace-nowrap">
                          الحالة

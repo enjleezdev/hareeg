@@ -21,7 +21,7 @@ interface SelectPlayersForNewRoundDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   allPlayers: Player[];
   onConfirm: (orderedSelectedPlayerIds: string[]) => void;
-  currentRoundPlayerIds?: string[]; // Optional: players from the round being archived
+  currentRoundPlayerIds?: string[]; 
 }
 
 export function SelectPlayersForNewRoundDialog({
@@ -36,40 +36,31 @@ export function SelectPlayersForNewRoundDialog({
 
   useEffect(() => {
     if (isOpen) {
-      // Initialize with players from the last round, or empty if no last round/preference.
-      // For now, let's try to pre-select players from the current/last round.
       const initialDraft: Player[] = [];
-      const initialPotential: Player[] = [...allPlayers];
+      let currentPotential = [...allPlayers]; 
 
       if (currentRoundPlayerIds.length > 0) {
         currentRoundPlayerIds.forEach(id => {
-          const player = allPlayers.find(p => p.id === id);
-          if (player) {
-            initialDraft.push(player);
-            const indexInPotential = initialPotential.findIndex(p => p.id === id);
-            if (indexInPotential > -1) {
-              initialPotential.splice(indexInPotential, 1);
-            }
+          const playerToAdd = allPlayers.find(p => p.id === id);
+          if (playerToAdd) {
+            initialDraft.push(playerToAdd);
+            currentPotential = currentPotential.filter(p => p.id !== playerToAdd.id);
           }
         });
-      } else {
-         // If no current round players, or if we prefer starting fresh, select all players initially
-         // setDraftPlayers([...allPlayers]);
-         // setPotentialPlayers([]);
-         // For now, let's start with an empty draft to explicitly require selection
-         setDraftPlayers([]);
-         setPotentialPlayers([...allPlayers]);
       }
-       setDraftPlayers(initialDraft);
-       setPotentialPlayers(initialPotential.sort((a, b) => a.name.localeCompare(b.name)));
-
-
+      
+      setDraftPlayers(initialDraft);
+      setPotentialPlayers(currentPotential.sort((a, b) => a.name.localeCompare(b.name)));
     } else {
-      // Reset when closed
-      setPotentialPlayers([]);
-      setDraftPlayers([]);
+      // Reset when closed - conditional update to prevent loops
+      if (draftPlayers.length > 0) {
+        setDraftPlayers([]);
+      }
+      if (potentialPlayers.length > 0) {
+        setPotentialPlayers([]);
+      }
     }
-  }, [isOpen, allPlayers, currentRoundPlayerIds]);
+  }, [isOpen, allPlayers, currentRoundPlayerIds]); // Dependencies remain focused on inputs
 
   const addPlayerToDraft = (player: Player) => {
     setDraftPlayers(prev => [...prev, player]);
@@ -93,7 +84,6 @@ export function SelectPlayersForNewRoundDialog({
 
   const handleConfirm = () => {
     if (draftPlayers.length === 0) {
-        // Optionally, add a toast here if using useToast hook
         alert("الرجاء اختيار لاعب واحد على الأقل.");
         return;
     }
