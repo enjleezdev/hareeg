@@ -1,13 +1,13 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { Player, GameRound, ArchivedGameRound, Distribution, PlayerOverallState } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArchivedRoundsDialog } from './ArchivedRoundsDialog';
-import { SelectPlayersForNewRoundDialog } from './SelectPlayersForNewRoundDialog';
+// SelectPlayersForNewRoundDialog is no longer used
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
 import { AlertCircle, PlusCircle, RotateCcw, FileArchive, CheckCircle, Minus, Printer } from 'lucide-react';
@@ -34,7 +34,7 @@ export default function GameDashboard() {
   const [archivedRounds, setArchivedRounds] = useState<ArchivedGameRound[]>([]);
   const [newDistributionScores, setNewDistributionScores] = useState<Record<string, string>>({});
   const [roundCounter, setRoundCounter] = useState(1);
-  const [isSelectPlayersDialogOpen, setIsSelectPlayersDialogOpen] = useState(false);
+  // isSelectPlayersDialogOpen is no longer used
 
   const { toast } = useToast();
 
@@ -42,7 +42,7 @@ export default function GameDashboard() {
     return allPlayers.find(p => p.id === playerId)?.name || 'لاعب غير معروف';
   };
   
-  const isAddPlayerDisabled = !!currentRound && Object.values(currentRound.playerOverallStates).some(p => p.isBurned) && !currentRound.isConcluded;
+  const disableAddPlayerGlobal = currentRound && !currentRound.isConcluded && currentRound.participatingPlayerIds.some(pid => currentRound.playerOverallStates[pid]?.isBurned);
 
 
   const resetNewDistributionScores = useCallback((participatingPlayerIdsForReset?: string[]) => {
@@ -66,24 +66,6 @@ export default function GameDashboard() {
     }
   }, [currentRound?.id, currentRound?.participatingPlayerIds, resetNewDistributionScores]);
   
-  const handleAddPlayer = () => {
-    if (newPlayerName.trim() === '') {
-      toast({ title: "خطأ", description: "الرجاء إدخال اسم اللاعب.", variant: "destructive" });
-      return;
-    }
-     if (isAddPlayerDisabled) {
-      toast({ title: "لا يمكن إضافة لاعب", description: "لا يمكن إضافة لاعب جديد أثناء وجود لاعب محروق في العشرة الحالية. ابدأ عشرة جديدة أولاً.", variant: "destructive" });
-      return;
-    }
-
-    const newPlayerId = crypto.randomUUID();
-    const newPlayer: Player = { id: newPlayerId, name: newPlayerName.trim() };
-    const updatedAllPlayers = [...allPlayers, newPlayer];
-    setAllPlayers(updatedAllPlayers);
-    setNewPlayerName('');
-    toast({ title: "تمت الإضافة", description: `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.` });
-  };
-
   const calculateOverallStates = (distributions: Distribution[], playerIds: string[], existingPlayersList: Player[]): Record<string, PlayerOverallState> => {
     const newOverallStates: Record<string, PlayerOverallState> = {};
     playerIds.forEach(playerId => {
@@ -102,20 +84,103 @@ export default function GameDashboard() {
     }
     return newOverallStates;
   };
+
+  const handleAddPlayer = () => {
+    if (newPlayerName.trim() === '') {
+      toast({ title: "خطأ", description: "الرجاء إدخال اسم اللاعب.", variant: "destructive" });
+      return;
+    }
+     if (disableAddPlayerGlobal) {
+      toast({ title: "لا يمكن إضافة لاعب", description: "لا يمكن إضافة لاعب جديد حالياً بسبب وجود لاعب محروق في العشرة الحالية. أكمل العشرة أو ابدأ عشرة جديدة.", variant: "destructive" });
+      return;
+    }
+
+    const newPlayerId = crypto.randomUUID();
+    const newPlayer: Player = { id: newPlayerId, name: newPlayerName.trim() };
+    const updatedAllPlayers = [...allPlayers, newPlayer];
+    setAllPlayers(updatedAllPlayers);
+    setNewPlayerName('');
+    toast({ title: "تمت الإضافة", description: `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.` });
+
+    // If there's an active, non-concluded round, add the player to it with the highest current score.
+    if (currentRound && !currentRound.isConcluded) {
+        const existingPlayerScores = currentRound.participatingPlayerIds
+            .map(pid => currentRound.playerOverallStates[pid]?.totalScore || 0);
+        const highestScore = Math.max(0, ...existingPlayerScores);
+
+        const updatedParticipatingPlayerIds = [...currentRound.participatingPlayerIds, newPlayerId];
+        
+        const scoresForCatchUpDistribution: Record<string, number> = {};
+        updatedParticipatingPlayerIds.forEach(pid => {
+            scoresForCatchUpDistribution[pid] = (pid === newPlayerId) ? highestScore : 0;
+        });
+
+        const catchUpDistribution: Distribution = {
+          id: crypto.randomUUID(),
+          name: `انضمام: ${newPlayer.name}`,
+          scores: scoresForCatchUpDistribution,
+        };
+
+        const updatedDistributions = [...currentRound.distributions, catchUpDistribution];
+        const updatedOverallStates = calculateOverallStates(updatedDistributions, updatedParticipatingPlayerIds, updatedAllPlayers);
+
+        let heroId: string | undefined = currentRound.heroId; // Preserve existing hero
+        const activePlayersCount = updatedParticipatingPlayerIds.filter(pid => updatedOverallStates[pid] && !updatedOverallStates[pid].isBurned).length;
+        
+        if (!heroId && activePlayersCount === 1 && updatedParticipatingPlayerIds.length > 1) {
+            const currentHeroId = updatedParticipatingPlayerIds.find(pid => updatedOverallStates[pid] && !updatedOverallStates[pid].isBurned);
+            if (currentHeroId && updatedOverallStates[currentHeroId]) {
+                 updatedOverallStates[currentHeroId].isHero = true;
+                 heroId = currentHeroId;
+                 // No toast for hero here, as it's just a catch-up. The game continues.
+            }
+        }
+        const isRoundNowConcluded = heroId !== undefined || (activePlayersCount === 0 && updatedParticipatingPlayerIds.length > 0);
+
+        setCurrentRound(prev => ({
+          ...prev!,
+          participatingPlayerIds: updatedParticipatingPlayerIds,
+          distributions: updatedDistributions,
+          playerOverallStates: updatedOverallStates,
+          heroId: heroId,
+          isConcluded: prev!.isConcluded || isRoundNowConcluded,
+        }));
+        
+        resetNewDistributionScores(updatedParticipatingPlayerIds);
+
+        toast({ title: "انضم لاعب!", description: `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.` });
+      }
+  };
   
   const archiveCurrentRound = () => {
     if (currentRound) {
+        // Recalculate final states just before archiving to ensure consistency
+        const finalPlayerOverallStates = calculateOverallStates(currentRound.distributions, currentRound.participatingPlayerIds, allPlayers);
+        
+        // Determine hero if not already set and conditions are met
+        let finalHeroId = currentRound.heroId;
+        if (!finalHeroId) {
+            const activePlayers = currentRound.participatingPlayerIds.filter(pid => finalPlayerOverallStates[pid] && !finalPlayerOverallStates[pid].isBurned);
+            if (activePlayers.length === 1 && currentRound.participatingPlayerIds.length > 1) {
+                finalHeroId = activePlayers[0];
+                if (finalPlayerOverallStates[finalHeroId]) {
+                    finalPlayerOverallStates[finalHeroId].isHero = true; // Ensure hero flag is set in states
+                }
+            }
+        }
+
         const roundToArchive: ArchivedGameRound = {
             ...currentRound,
             endTime: new Date(),
             isConcluded: true, 
-            playerOverallStates: calculateOverallStates(currentRound.distributions, currentRound.participatingPlayerIds, allPlayers),
+            playerOverallStates: finalPlayerOverallStates,
+            heroId: finalHeroId, // Use the potentially newly determined heroId
          };
         setArchivedRounds(prev => [...prev, roundToArchive]);
     }
   }
 
-  const handleOpenPlayerSelectDialog = () => {
+  const handleStartNewRound = () => {
     if (currentRound && !currentRound.isConcluded) {
       const confirmStartNew = window.confirm("العشرة الحالية لم تنته بعد. هل أنت متأكد أنك تريد بدء عشرة جديدة وأرشفة الحالية؟");
       if (!confirmStartNew) return;
@@ -128,30 +193,24 @@ export default function GameDashboard() {
       toast({ title: "لا يوجد لاعبين", description: "الرجاء إضافة لاعبين أولاً لبدء عشرة جديدة.", variant: "destructive" });
       return;
     }
-    setIsSelectPlayersDialogOpen(true);
-  };
-
-  const handleStartRoundWithSelectedPlayers = (selectedPlayerIds: string[]) => {
-    if (selectedPlayerIds.length === 0) {
-        toast({ title: "خطأ في الاختيار", description: "الرجاء اختيار لاعب واحد على الأقل للمشاركة في العشرة الجديدة.", variant: "destructive" });
-        return;
-    }
     
-    const initialOverallStates = calculateOverallStates([], selectedPlayerIds, allPlayers);
+    const participatingPlayerIdsForNewRound = allPlayers.map(p => p.id);
+    const initialOverallStates = calculateOverallStates([], participatingPlayerIdsForNewRound, allPlayers);
 
     setCurrentRound({
       id: crypto.randomUUID(),
       roundNumber: roundCounter,
       startTime: new Date(),
-      participatingPlayerIds: selectedPlayerIds,
+      participatingPlayerIds: participatingPlayerIdsForNewRound,
       distributions: [],
       playerOverallStates: initialOverallStates,
       isConcluded: false,
+      heroId: undefined, // Ensure heroId is reset for a new round
     });
+    
+    resetNewDistributionScores(participatingPlayerIdsForNewRound); 
+    toast({ title: `بدء عشرة جديدة (رقم ${roundCounter})`, description: "تم تجهيز لوحة النقاط بجميع اللاعبين المسجلين." });
     setRoundCounter(prev => prev + 1);
-    resetNewDistributionScores(selectedPlayerIds); 
-    toast({ title: `بدء عشرة جديدة (رقم ${roundCounter})`, description: "تم تجهيز لوحة النقاط باللاعبين المختارين." });
-    setIsSelectPlayersDialogOpen(false);
   };
 
 
@@ -161,36 +220,42 @@ export default function GameDashboard() {
       return false;
     }
     
-    const name = distributionName || `توزيعة ${currentRound.distributions.length + 1}`;
+    const name = distributionName || `توزيعة ${currentRound.distributions.filter(d => !d.name.startsWith("انضمام:") && !d.name.startsWith("تعديل لـ")).length + 1}`;
+    
+    // Ensure all participating players have a score entry, defaulting to 0 if not provided
+    const completeScores: Record<string, number> = {};
+    currentRound.participatingPlayerIds.forEach(pid => {
+      completeScores[pid] = scoresToAdd[pid] || 0;
+    });
+
     const newDistribution: Distribution = {
       id: crypto.randomUUID(),
       name,
-      scores: scoresToAdd,
+      scores: completeScores,
     };
 
     const updatedDistributions = [...currentRound.distributions, newDistribution];
     const updatedOverallStates = calculateOverallStates(updatedDistributions, currentRound.participatingPlayerIds, allPlayers);
 
-    let heroId: string | undefined = undefined;
+    let heroIdFromThisDistribution: string | undefined = undefined;
     const activePlayersCount = currentRound.participatingPlayerIds.filter(pid => updatedOverallStates[pid] && !updatedOverallStates[pid].isBurned).length;
     
     if (activePlayersCount === 1 && currentRound.participatingPlayerIds.length > 1) {
-        heroId = currentRound.participatingPlayerIds.find(pid => updatedOverallStates[pid] && !updatedOverallStates[pid].isBurned);
-        if (heroId && updatedOverallStates[heroId]) {
-             updatedOverallStates[heroId].isHero = true;
+        heroIdFromThisDistribution = currentRound.participatingPlayerIds.find(pid => updatedOverallStates[pid] && !updatedOverallStates[pid].isBurned);
+        if (heroIdFromThisDistribution && updatedOverallStates[heroIdFromThisDistribution]) {
+             updatedOverallStates[heroIdFromThisDistribution].isHero = true;
         }
-        toast({ title: "بطل العشرة!", description: `اللاعب ${getPlayerName(heroId!)} هو بطل العشرة!`, className:"bg-yellow-400 text-black" });
+        toast({ title: "بطل العشرة!", description: `اللاعب ${getPlayerName(heroIdFromThisDistribution!)} هو بطل العشرة!`, className:"bg-yellow-400 text-black" });
     }
 
-
-    const isRoundConcluded = heroId !== undefined || (activePlayersCount === 0 && currentRound.participatingPlayerIds.length > 0);
+    const isRoundConcludedByThis = heroIdFromThisDistribution !== undefined || (activePlayersCount === 0 && currentRound.participatingPlayerIds.length > 0);
 
     setCurrentRound(prev => prev ? { 
         ...prev, 
         distributions: updatedDistributions, 
         playerOverallStates: updatedOverallStates,
-        heroId, 
-        isConcluded: isRoundConcluded 
+        heroId: prev.heroId || heroIdFromThisDistribution, 
+        isConcluded: prev.isConcluded || isRoundConcludedByThis
     } : null);
     
     return true;
@@ -238,25 +303,38 @@ export default function GameDashboard() {
     if (!currentRound || currentRound.isConcluded) return;
     
     const playerName = getPlayerName(playerId);
+    // PlayerOverallState is already calculated and available in currentRound.playerOverallStates[playerId]
     const playerStateBeforeAdjustment = currentRound.playerOverallStates[playerId];
 
+
     const scoresForAdjustment: Record<string, number> = {};
-    currentRound.participatingPlayerIds.forEach(pid => {
+     currentRound.participatingPlayerIds.forEach(pid => {
         scoresForAdjustment[pid] = (pid === playerId) ? adjustment : 0;
     });
+
 
     const success = internalAddDistribution(scoresForAdjustment, `تعديل لـ ${playerName} (${adjustment > 0 ? '+' : ''}${adjustment})`);
     
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        const temporaryDistributions = currentRound.distributions; 
-        const overallStatesAfterTempAdjustment = calculateOverallStates(temporaryDistributions, currentRound.participatingPlayerIds, allPlayers);
-        const playerStateAfterAdjustment = overallStatesAfterTempAdjustment[playerId];
+        // Access the latest state directly from currentRound after internalAddDistribution updates it
+        // Need to be careful if internalAddDistribution's setCurrentRound is async or batched
+        // For simplicity, we assume it's synchronous enough for the next lines.
+        // A more robust way might be to re-fetch from the state or pass updated states back.
+        // However, calculateOverallStates is pure and re-run inside internalAddDistribution.
+        // So, the `currentRound` state updated by `internalAddDistribution` will have the latest.
+
+        // To get the state *after* adjustment for the toast, we can rely on the updated currentRound
+        // This might be slightly delayed if setCurrentRound batches, but for toasts it's usually fine.
+        // Let's assume currentRound is updated for the toasts below.
+        
+        const playerStateAfterAdjustment = currentRound?.playerOverallStates[playerId];
+
 
         if (playerStateAfterAdjustment?.isBurned && !playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "حريق!", description: `اللاعب ${playerName} احترق بسبب التعديل!`, variant: "destructive" });
-        } else if (!playerStateAfterAdjustment?.isBurned && playerStateBeforeAdjustment?.isBurned) {
+        } else if (playerStateAfterAdjustment && !playerStateAfterAdjustment.isBurned && playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "عاد للحياة!", description: `اللاعب ${playerName} لم يعد محروقاً بعد التعديل.`});
         }
     }
@@ -268,8 +346,13 @@ export default function GameDashboard() {
       return;
     }
     if (currentRound && currentRound.distributions.length > 0 && !currentRound.isConcluded) {
-      toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية. قم بأرشفة العشرة الحالية أولاً أو تراجع عن التوزيعات.", variant: "destructive"});
-      return;
+      const nonJoinOrEditDistributions = currentRound.distributions.filter(
+        d => !d.name.startsWith("انضمام:") && !d.name.startsWith("تعديل لـ")
+      ).length;
+      if (nonJoinOrEditDistributions > 0) {
+         toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات أساسية في العشرة الحالية. قم بأرشفة العشرة الحالية أولاً أو تراجع عن التوزيعات.", variant: "destructive"});
+         return;
+      }
     }
 
     const lastArchivedRoundData = archivedRounds[archivedRounds.length - 1];
@@ -311,7 +394,8 @@ export default function GameDashboard() {
     toast({ title: "تم الاسترجاع", description: `تم استرجاع العشرة رقم ${restoredRound.roundNumber}.` });
   };
   
-  const canUndoStartNewRound = (currentRound?.distributions.length === 0 || currentRound?.isConcluded === true) && archivedRounds.length > 0;
+  const canUndoStartNewRound = (currentRound?.distributions.filter(d => !d.name.startsWith("انضمام:") && !d.name.startsWith("تعديل لـ")).length === 0 || currentRound?.isConcluded === true) && archivedRounds.length > 0;
+
 
   const handleMakeScoreNegative = (playerId: string) => {
     setNewDistributionScores(prevScores => {
@@ -331,7 +415,9 @@ export default function GameDashboard() {
     });
   };
 
-  const participatingPlayerIdsForDialog = useMemo(() => currentRound?.participatingPlayerIds || [], [currentRound]);
+  // participatingPlayerIdsForDialog is no longer used
+  // const participatingPlayerIdsForDialog = useMemo(() => currentRound?.participatingPlayerIds || [], [currentRound]);
+
 
   const handlePrint = () => {
     window.print();
@@ -356,25 +442,25 @@ export default function GameDashboard() {
               onChange={(e) => setNewPlayerName(e.target.value)}
               placeholder="اسم اللاعب الجديد"
               className="flex-grow"
-              disabled={isAddPlayerDisabled}
+              disabled={disableAddPlayerGlobal}
               aria-label="اسم اللاعب الجديد"
             />
-            <Button onClick={handleAddPlayer} disabled={isAddPlayerDisabled} variant="secondary">
+            <Button onClick={handleAddPlayer} disabled={disableAddPlayerGlobal} variant="secondary">
               <PlusCircle className="ms-2 h-4 w-4" /> إضافة لاعب للقائمة
             </Button>
           </div>
-           {isAddPlayerDisabled && (
+           {disableAddPlayerGlobal && (
              <Alert variant="destructive" className="mt-2">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>تنبيه</AlertTitle>
-                <AlertDescription>لا يمكن إضافة لاعبين جدد للقائمة أثناء وجود لاعب محروق في العشرة الحالية. أكمل العشرة أو ابدأ عشرة جديدة أولاً.</AlertDescription>
+                <AlertDescription>لا يمكن إضافة لاعبين جدد للقائمة أو تعديل اللاعبين الحاليين أثناء وجود لاعب محروق في العشرة الحالية. أكمل العشرة أو ابدأ عشرة جديدة أولاً.</AlertDescription>
             </Alert>
           )}
         </CardContent>
       </Card>
 
       <div className="flex flex-wrap gap-4 justify-center no-print">
-        <Button onClick={handleOpenPlayerSelectDialog} size="lg" className="min-w-[180px]">
+        <Button onClick={handleStartNewRound} size="lg" className="min-w-[180px]">
            <PlusCircle className="ms-2 h-5 w-5"/> عشرة جديدة
         </Button>
         <ArchivedRoundsDialog archivedRounds={archivedRounds} allPlayers={allPlayers} />
@@ -390,13 +476,7 @@ export default function GameDashboard() {
       
       <Separator className="no-print" />
 
-       <SelectPlayersForNewRoundDialog
-        isOpen={isSelectPlayersDialogOpen}
-        onOpenChange={setIsSelectPlayersDialogOpen}
-        allPlayers={allPlayers}
-        onConfirm={handleStartRoundWithSelectedPlayers}
-        currentRoundPlayerIds={participatingPlayerIdsForDialog}
-      />
+      {/* SelectPlayersForNewRoundDialog is no longer rendered */}
 
       {currentRound && currentRound.participatingPlayerIds.length > 0 ? (
         <div id="printable-round-content" className="space-y-6">
@@ -553,4 +633,3 @@ export default function GameDashboard() {
     </div>
   );
 }
-
