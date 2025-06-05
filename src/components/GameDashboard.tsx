@@ -92,7 +92,7 @@ export default function GameDashboard() {
       toast({ title: "خطأ", description: "الرجاء إدخال اسم اللاعب.", variant: "destructive" });
       return;
     }
-     if (disableAddPlayerGlobal) { // This check is mostly for UI disabling, but good to have here too
+     if (disableAddPlayerGlobal) { 
       toast({ title: "لا يمكن إضافة لاعب", description: "لا يمكن إضافة لاعب جديد حالياً بسبب وجود لاعب محروق في العشرة الحالية. أكمل العشرة أو ابدأ عشرة جديدة.", variant: "destructive" });
       return;
     }
@@ -109,13 +109,11 @@ export default function GameDashboard() {
         let updatedDistributions = [...currentRound.distributions];
         let joinMessage = `تم إضافة اللاعب ${newPlayer.name} إلى قائمة اللاعبين الكلية.`;
 
-        // Check if there are any *actual gameplay* distributions (not join/edit)
         const hasGameplayDistributions = currentRound.distributions.some(
-            dist => !dist.name.startsWith("انضمام:") && !dist.name.startsWith("تعديل لـ")
+            dist => !dist.name.startsWith("join:") && !dist.name.startsWith("تعديل لـ")
         );
 
         if (hasGameplayDistributions) {
-            // Gameplay has started, new player catches up to highest score
             const existingPlayerScores = currentRound.participatingPlayerIds
                 .map(pid => currentRound.playerOverallStates[pid]?.totalScore || 0);
             const highestScore = Math.max(0, ...existingPlayerScores);
@@ -127,14 +125,12 @@ export default function GameDashboard() {
 
             const catchUpDistribution: Distribution = {
               id: crypto.randomUUID(),
-              name: `انضمام: ${newPlayer.name}`,
+              name: `join:${newPlayerId}:${newPlayer.name}`, // Store ID and name
               scores: scoresForCatchUpDistribution,
             };
             updatedDistributions.push(catchUpDistribution);
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط ${highestScore}.`;
         } else {
-            // No actual gameplay distributions yet, new player starts at 0.
-            // No special distribution needed; calculateOverallStates will assign 0.
             joinMessage = `${newPlayer.name} انضم إلى العشرة الحالية بنقاط 0.`;
         }
         
@@ -245,7 +241,7 @@ export default function GameDashboard() {
       return false;
     }
     
-    const name = distributionName || `توزيعة ${currentRound.distributions.filter(d => !d.name.startsWith("انضمام:") && !d.name.startsWith("تعديل لـ")).length + 1}`;
+    const name = distributionName || `توزيعة ${currentRound.distributions.filter(d => !d.name.startsWith("join:") && !d.name.startsWith("تعديل لـ")).length + 1}`;
     
     const completeScores: Record<string, number> = {};
     currentRound.participatingPlayerIds.forEach(pid => {
@@ -364,7 +360,7 @@ export default function GameDashboard() {
     let currentRoundCanBeDiscarded = true;
     if (currentRound && !currentRound.isConcluded) {
       const nonJoinOrEditDistributions = currentRound.distributions.filter(
-        d => !d.name.startsWith("انضمام:") && !d.name.startsWith("تعديل لـ")
+        d => !d.name.startsWith("join:") && !d.name.startsWith("تعديل لـ")
       ).length;
       if (nonJoinOrEditDistributions > 0) {
          currentRoundCanBeDiscarded = false;
@@ -416,7 +412,7 @@ export default function GameDashboard() {
     toast({ title: "تم الاسترجاع", description: `تم استرجاع العشرة رقم ${restoredRound.roundNumber}.` });
   };
   
-  const canUndoStartNewRound = (currentRound?.distributions.filter(d => !d.name.startsWith("انضمام:") && !d.name.startsWith("تعديل لـ")).length === 0 || currentRound?.isConcluded === true) && archivedRounds.length > 0;
+  const canUndoStartNewRound = (currentRound?.distributions.filter(d => !d.name.startsWith("join:") && !d.name.startsWith("تعديل لـ")).length === 0 || currentRound?.isConcluded === true) && archivedRounds.length > 0;
 
 
   const handleMakeScoreNegative = (playerId: string) => {
@@ -559,16 +555,44 @@ export default function GameDashboard() {
                     })}
                   </TableRow>
 
-                  {currentRound.distributions.slice().reverse().map((dist) => (
-                    <TableRow key={dist.id}>
-                      <TableCell className="font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{dist.name}</TableCell>
-                      {currentRound.participatingPlayerIds.map(playerId => (
-                        <TableCell key={playerId} className={cn(dist.scores[playerId] < 0 && "bg-red-100/70")}>
-                          {dist.scores[playerId] ?? '-'}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
+                  {currentRound.distributions.slice().reverse().map((dist) => {
+                    let distNameToDisplay = dist.name;
+                    let isJoinDistForSpecificPlayer = false;
+                    let joiningPlayerIdInThisDist: string | undefined = undefined;
+
+                    if (dist.name.startsWith("join:")) {
+                        const parts = dist.name.split(':'); // "join", playerId, playerName...
+                        if (parts.length >= 3) {
+                            joiningPlayerIdInThisDist = parts[1];
+                            // Reconstruct player name if it contained colons, though unlikely for user input names
+                            const joiningPlayerName = parts.slice(2).join(':'); 
+                            distNameToDisplay = `انضمام: ${joiningPlayerName}`;
+                            isJoinDistForSpecificPlayer = true;
+                        }
+                    }
+
+                    return (
+                      <TableRow key={dist.id}>
+                        <TableCell className="font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{distNameToDisplay}</TableCell>
+                        {currentRound.participatingPlayerIds.map(playerId => {
+                          const rawScore = dist.scores[playerId];
+                          let cellContent;
+
+                          if (isJoinDistForSpecificPlayer && joiningPlayerIdInThisDist && playerId !== joiningPlayerIdInThisDist && rawScore === 0) {
+                            cellContent = '-';
+                          } else {
+                            cellContent = rawScore ?? '-';
+                          }
+                          
+                          return (
+                            <TableCell key={playerId} className={cn(rawScore !== undefined && rawScore < 0 && "bg-red-100/70")}>
+                              {cellContent}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    );
+                  })}
 
                   {!currentRound.isConcluded && (
                     <TableRow className="no-print">
