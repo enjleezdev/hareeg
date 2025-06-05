@@ -1,6 +1,7 @@
+
 "use client";
 
-import type { PlayerRoundState } from '@/lib/types';
+import type { PlayerOverallState } from '@/lib/types'; // Changed from PlayerRoundState
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +18,7 @@ import { Pencil } from "lucide-react";
 import React, { useState } from 'react';
 
 interface EditScoreDialogProps {
-  playerState: PlayerRoundState;
+  playerState: Pick<PlayerOverallState, 'playerId' | 'name' | 'totalScore'>; // Use relevant fields from PlayerOverallState
   onEditScore: (playerId: string, adjustment: number) => void;
 }
 
@@ -76,3 +77,4 @@ export function EditScoreDialog({ playerState, onEditScore }: EditScoreDialogPro
     </Dialog>
   );
 }
+

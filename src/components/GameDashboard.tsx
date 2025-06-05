@@ -120,21 +120,11 @@ export default function GameDashboard() {
     if (currentRound && !currentRound.isConcluded) {
       const confirmStartNew = window.confirm("العشرة الحالية لم تنته بعد. هل أنت متأكد أنك تريد بدء عشرة جديدة وأرشفة الحالية؟");
       if (!confirmStartNew) return;
-      // Ensure correct type for archiving
+      
       const roundToArchive: ArchivedGameRound = { 
         ...currentRound, 
         endTime: new Date(), 
         isConcluded: true,
-        // The following are to satisfy ArchivedGameRound if its structure is different
-        // This part might need adjustment based on exact ArchivedGameRound definition
-        playerStates: Object.values(currentRound.playerOverallStates).map(pos => ({
-            playerId: pos.playerId,
-            name: pos.name,
-            scores: currentRound.distributions.map(d => d.scores[pos.playerId] || 0),
-            totalScore: pos.totalScore,
-            isBurned: pos.isBurned,
-            isHero: pos.isHero
-        }))
       };
       setArchivedRounds(prev => [...prev, roundToArchive]);
 
@@ -142,14 +132,6 @@ export default function GameDashboard() {
        const roundToArchive: ArchivedGameRound = { 
         ...currentRound, 
         endTime: new Date(),
-        playerStates: Object.values(currentRound.playerOverallStates).map(pos => ({
-            playerId: pos.playerId,
-            name: pos.name,
-            scores: currentRound.distributions.map(d => d.scores[pos.playerId] || 0),
-            totalScore: pos.totalScore,
-            isBurned: pos.isBurned,
-            isHero: pos.isHero
-        }))
        };
        setArchivedRounds(prev => [...prev, roundToArchive]);
     }
@@ -226,7 +208,7 @@ export default function GameDashboard() {
 
     for (const playerId of currentRound.participatingPlayerIds) {
       if (currentRound.playerOverallStates[playerId]?.isBurned) {
-        parsedScores[playerId] = 0; // Or handle as already burned
+        parsedScores[playerId] = 0; 
         continue;
       }
       const scoreStr = newDistributionScores[playerId] || "0";
@@ -268,17 +250,24 @@ export default function GameDashboard() {
     if(success) {
         toast({ title: "تم تعديل النقاط", description: `تمت إضافة توزيعة تعديل لنقاط ${playerName}.` });
         
-        // Check if player burned/unburned due to adjustment
-        const playerStateAfterAdjustment = currentRound.playerOverallStates[playerId]; // This state is from BEFORE internalAddDistribution recalculates
-        const newPlayerState = calculateOverallStates(
-            [...currentRound.distributions, {id: '_temp', name: 'adj', scores: scoresForAdjustment}], // Simulates the next state
-            currentRound.participatingPlayerIds,
-            allPlayers
-        )[playerId];
+        // This part needs to access the state *after* internalAddDistribution has run
+        // We need to be careful with state updates timing. Let's use a useEffect or recalculate locally if complex.
+        // For simplicity, we re-calculate based on the *new* distributions list for the toast.
+        const playerStateBeforeAdjustment = currentRound.playerOverallStates[playerId]; // State before this adjustment distribution
+        
+        // Temporarily create distributions list that *would* exist after adjustment
+        const tempDistributions = [...currentRound.distributions, {id: '_temp_adj', name: 'temp_adj', scores: scoresForAdjustment}];
+        const newOverallStatesAfterAdjustment = calculateOverallStates(tempDistributions, currentRound.participatingPlayerIds, allPlayers);
+        const newPlayerState = newOverallStatesAfterAdjustment[playerId];
 
-        if (newPlayerState.isBurned && !playerStateAfterAdjustment?.isBurned) {
+        // Check currentRound from state for the latest after `internalAddDistribution`
+        // The `setCurrentRound` inside `internalAddDistribution` will trigger a re-render,
+        // at which point `currentRound.playerOverallStates[playerId]` would be updated.
+        // However, for immediate toast, we might need to rely on the calculated `newPlayerState`.
+
+        if (newPlayerState.isBurned && !playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "حريق!", description: `اللاعب ${playerName} احترق بسبب التعديل!`, variant: "destructive" });
-        } else if (!newPlayerState.isBurned && playerStateAfterAdjustment?.isBurned) {
+        } else if (!newPlayerState.isBurned && playerStateBeforeAdjustment?.isBurned) {
              toast({ title: "عاد للحياة!", description: `اللاعب ${playerName} لم يعد محروقاً بعد التعديل.`});
         }
     }
@@ -289,7 +278,6 @@ export default function GameDashboard() {
       toast({ title: "خطأ", description: "لا توجد عشرات مؤرشفة لاسترجاعها.", variant: "destructive"});
       return;
     }
-    // Check if any scores have been entered in the current round.
     if (currentRound && currentRound.distributions.length > 0) {
       toast({ title: "خطأ", description: "لا يمكن استرجاع العشرة السابقة بعد إدخال توزيعات في العشرة الحالية.", variant: "destructive"});
       return;
@@ -297,39 +285,18 @@ export default function GameDashboard() {
 
     const lastArchivedRoundData = archivedRounds[archivedRounds.length - 1];
     
-    // Reconstruct GameRound from ArchivedGameRound
-    const participatingPlayerIdsFromArchive = lastArchivedRoundData.playerStates.map(ps => ps.playerId);
-    const distributionsFromArchive: Distribution[] = [];
-    if (lastArchivedRoundData.playerStates.length > 0 && lastArchivedRoundData.playerStates[0].scores.length > 0) {
-        const numDistributions = lastArchivedRoundData.playerStates[0].scores.length;
-        for (let i = 0; i < numDistributions; i++) {
-            const scoresForDist: Record<string, number> = {};
-            lastArchivedRoundData.playerStates.forEach(ps => {
-                scoresForDist[ps.playerId] = ps.scores[i] || 0;
-            });
-            distributionsFromArchive.push({
-                id: crypto.randomUUID(),
-                name: `توزيعة ${i + 1} (مسترجعة)`,
-                scores: scoresForDist
-            });
-        }
-    }
-    
-    const overallStatesFromArchive = calculateOverallStates(distributionsFromArchive, participatingPlayerIdsFromArchive, allPlayers);
-
     const restoredRound: GameRound = {
         id: lastArchivedRoundData.id,
         roundNumber: lastArchivedRoundData.roundNumber,
-        startTime: new Date(lastArchivedRoundData.startTime), // Ensure it's a Date object
-        participatingPlayerIds: participatingPlayerIdsFromArchive,
-        distributions: distributionsFromArchive,
-        playerOverallStates: overallStatesFromArchive,
+        startTime: new Date(lastArchivedRoundData.startTime),
+        participatingPlayerIds: lastArchivedRoundData.participatingPlayerIds,
+        distributions: lastArchivedRoundData.distributions, // Directly use distributions
+        playerOverallStates: lastArchivedRoundData.playerOverallStates, // Directly use states
         heroId: lastArchivedRoundData.heroId,
         isConcluded: lastArchivedRoundData.isConcluded,
     };
     
-    // Update allPlayers list to ensure it includes all players from the restored round
-    const restoredPlayerDetails: Player[] = lastArchivedRoundData.playerStates.map(ps => ({id: ps.playerId, name: ps.name}));
+    const restoredPlayerDetails: Player[] = Object.values(lastArchivedRoundData.playerOverallStates).map(pos => ({id: pos.playerId, name: pos.name}));
     const currentAllPlayerIds = new Set(allPlayers.map(p => p.id));
     const newPlayersToAdd = restoredPlayerDetails.filter(p => !currentAllPlayerIds.has(p.id));
     if (newPlayersToAdd.length > 0) {
@@ -413,7 +380,7 @@ export default function GameDashboard() {
           )}
           {currentRound.isConcluded && !currentRound.heroId && currentRound.participatingPlayerIds.length > 0 && currentRound.participatingPlayerIds.every(pid => currentRound.playerOverallStates[pid]?.isBurned) && (
              <Alert variant="destructive">
-              <FlameIcon className="h-5 w-5" />
+              <FlameIcon className="h-5 w-5" data-ai-hint="fire flame"/>
               <AlertTitle className="font-bold">كل اللاعبين احترقوا!</AlertTitle>
               <AlertDescription>
                 لا يوجد بطل لهذه العشرة. اضغط "عشرة جديدة" للبدء من جديد.
@@ -434,7 +401,22 @@ export default function GameDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {currentRound.distributions.map((dist, distIndex) => (
+                  {/* Total Scores Row */}
+                  <TableRow className="bg-secondary/50 font-bold">
+                    <TableCell className="sticky left-0 bg-secondary/50 z-10">المجموع</TableCell>
+                    {currentRound.participatingPlayerIds.map(playerId => {
+                      const playerState = currentRound.playerOverallStates[playerId];
+                      return (
+                        <TableCell key={playerId} className={cn(playerState?.isBurned && "text-destructive flame-animation")}>
+                          {playerState?.totalScore ?? 0}
+                        </TableCell>
+                      );
+                    })}
+                     {!currentRound.isConcluded && <TableCell></TableCell>} {/* Empty cell for tools column */}
+                  </TableRow>
+
+                  {/* Distribution Rows */}
+                  {currentRound.distributions.map((dist) => (
                     <TableRow key={dist.id}>
                       <TableCell className="font-medium sticky left-0 bg-card z-10">{dist.name}</TableCell>
                       {currentRound.participatingPlayerIds.map(playerId => (
@@ -442,9 +424,10 @@ export default function GameDashboard() {
                           {dist.scores[playerId] ?? '-'}
                         </TableCell>
                       ))}
-                      {!currentRound.isConcluded && <TableCell></TableCell>} {/* Empty cell for tools column in distribution rows */}
+                      {!currentRound.isConcluded && <TableCell></TableCell>} {/* Empty cell for tools column */}
                     </TableRow>
                   ))}
+
                   {/* Row for new distribution input */}
                   {!currentRound.isConcluded && (
                     <TableRow>
@@ -466,22 +449,10 @@ export default function GameDashboard() {
                           )}
                         </TableCell>
                       ))}
-                      <TableCell></TableCell> {/* Empty cell for tools column in new distribution row */}
+                      <TableCell></TableCell> {/* Empty cell for tools column */}
                     </TableRow>
                   )}
-                  {/* Total Scores Row */}
-                  <TableRow className="bg-secondary/50 font-bold">
-                    <TableCell className="sticky left-0 bg-secondary/50 z-10">المجموع</TableCell>
-                    {currentRound.participatingPlayerIds.map(playerId => {
-                      const playerState = currentRound.playerOverallStates[playerId];
-                      return (
-                        <TableCell key={playerId} className={cn(playerState?.isBurned && "text-destructive flame-animation")}>
-                          {playerState?.totalScore ?? 0}
-                        </TableCell>
-                      );
-                    })}
-                     {!currentRound.isConcluded && <TableCell></TableCell>}
-                  </TableRow>
+                  
                   {/* Status Row */}
                   <TableRow className="bg-secondary/50">
                     <TableCell className="font-semibold sticky left-0 bg-secondary/50 z-10">الحالة</TableCell>
@@ -500,13 +471,20 @@ export default function GameDashboard() {
                             {currentRound.participatingPlayerIds.filter(pid => !currentRound.playerOverallStates[pid]?.isBurned).map(pid => (
                                  <EditScoreDialog 
                                      key={`edit-${pid}`}
-                                     // Pass a simplified state for the dialog
                                      playerState={{ 
                                          playerId: pid, 
                                          name: getPlayerName(pid), 
                                          totalScore: currentRound.playerOverallStates[pid]?.totalScore || 0,
-                                         scores: [], // Not directly relevant for "adjustment distribution"
+                                         // For PlayerRoundState, scores[] might not be directly available or relevant here for an adjustment distribution
+                                         // Passing empty or relevant if needed by dialog, but dialog only uses totalScore and name
+                                         scores: currentRound.distributions.map(d => d.scores[pid] || 0), 
                                          isBurned: currentRound.playerOverallStates[pid]?.isBurned || false,
+                                         // PlayerOverallState doesn't have individual 'scores', but PlayerRoundState did.
+                                         // The EditScoreDialog was taking PlayerRoundState.
+                                         // We need to make sure the dialog gets what it expects or adapt the dialog.
+                                         // Let's keep the structure for playerState as close to PlayerOverallState for consistency
+                                         // and ensure EditScoreDialog can work with it.
+                                         // EditScoreDialog uses 'name' and 'totalScore' primarily from playerState.
                                      }} 
                                      onEditScore={handleEditScore} 
                                  />
@@ -525,7 +503,7 @@ export default function GameDashboard() {
 
            {currentRound.participatingPlayerIds.length > 0 && currentRound.participatingPlayerIds.filter(pid => !currentRound.playerOverallStates[pid]?.isBurned).length === 0 && !currentRound.isConcluded && (
              <Alert variant="destructive" className="mt-4">
-                <FlameIcon className="h-4 w-4" />
+                <FlameIcon className="h-4 w-4" data-ai-hint="fire flame" />
                 <AlertTitle>جميع اللاعبين النشطين احترقوا!</AlertTitle>
                 <AlertDescription>الرجاء الضغط على "عشرة جديدة" لبدء جولة أخرى.</AlertDescription>
             </Alert>
@@ -543,3 +521,4 @@ export default function GameDashboard() {
     </div>
   );
 }
+
